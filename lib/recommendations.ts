@@ -57,7 +57,7 @@ export function ownerRecommendations(
   if (exportWin.sum > 0.5) {
     recs.push({
       title: "Porniți consumatorii mari la prânz",
-      text: `Între ${hh(exportWin.start)} și ${hh(exportWin.end)} trimiteți în rețea în medie ${fmt(exportWin.sum)} kWh pe zi. Mașina de spălat, boilerul, pompa de căldură sau încărcarea mașinii electrice pornite în acest interval folosesc energie proprie în loc de energie cumpărată.`,
+      text: `Între ${hh(exportWin.start)} și ${hh(exportWin.end)} trimiteți în rețea în medie ${fmt(exportWin.sum)} kWh pe zi. Mutarea unor consumatori (boiler, mașină de spălat, încărcare auto) în acest interval poate utiliza mai mult din surplusul propriu.`,
     });
   }
 
@@ -82,16 +82,14 @@ export function ownerRecommendations(
   }
 
   // 4. Bateria se umple devreme.
-  const fullEarly = days.filter((d) => {
-    for (let i = d.start; i <= d.end; i++) {
-      if (items[i].minutes < 13 * 60 && items[i].soc >= 99) return true;
-    }
-    return false;
-  }).length;
+  // items conține DOAR intervalele din filtrul activ; indecșii din DaySummary sunt globali.
+  // Folosim cheia zilei, astfel încât recomandările să rămână corecte și pentru ultimele 7/14 zile.
+  const earlyFullKeys = new Set(items.filter((it) => it.energyValid && it.minutes < 13 * 60 && it.soc >= 99).map((it) => it.dayKey));
+  const fullEarly = days.filter((d) => earlyFullKeys.has(d.key)).length;
   if (fullEarly > 0) {
     recs.push({
       title: "Bateria se umple înainte de ora 13",
-      text: `În ${fullEarly} din ${days.length} zile bateria ajunge la 100% înainte de 13:00. După acel moment surplusul pleacă în rețea${period.eCurt > 0 ? " sau este tăiat de plafon" : ""}, deci consumul mutat după-amiaza (13:00–17:00) este practic gratuit.`,
+      text: `În ${fullEarly} din ${days.length} zile bateria a atins cel puțin 99% înainte de ora 13:00. Dacă există surplus după acel moment, mutarea unor consumuri în orele însorite ar putea reduce exportul sau energia tăiată.`,
     });
   }
 
@@ -99,8 +97,8 @@ export function ownerRecommendations(
   const emptied = days.filter((d) => d.totals.socMin <= 10).length;
   if (emptied > 0) {
     recs.push({
-      title: "Bateria se golește noaptea",
-      text: `În ${emptied} din ${days.length} zile bateria coboară la 10% sau mai puțin, iar restul consumului vine din rețea. Consumul mai mic seara sau o baterie mai mare ar crește independența energetică.`,
+      title: "Bateria ajunge aproape descărcată",
+      text: `În ${emptied} din ${days.length} zile, bateria coboară la 10% sau mai puțin. Verificați când apare consumul din rețea și dacă îl puteți muta în orele cu producție.`,
     });
   }
 
@@ -109,7 +107,7 @@ export function ownerRecommendations(
   if (pvDays.length > 0) {
     recs.push({
       title: "Verificați invertorul",
-      text: `Panourile nu au produs nimic la prânz în ${pvDays.length === 1 ? "ziua" : "zilele"} ${pvDays.slice(0, 5).join(", ")}${pvDays.length > 5 ? " …" : ""}. Merită verificat istoricul de erori al invertorului sau chemat instalatorul.`,
+      text: `Producția a fost zero în intervale de prânz în ${pvDays.length === 1 ? "ziua" : "zilele"} ${pvDays.slice(0, 5).join(", ")}${pvDays.length > 5 ? " …" : ""}. Verificați mai întâi dacă au existat lucrări, umbrire sau opriri programate; dacă nu, consultați invertorul.`,
     });
   }
 

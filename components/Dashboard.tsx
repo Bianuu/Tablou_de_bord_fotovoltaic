@@ -45,14 +45,11 @@ export default function Dashboard() {
       try {
         const text = await file.text();
         const result = parseCsv(text, file.name);
-        // Plafonul implicit: 70% din cea mai mare putere de export din fișier, ca să se vadă efectul.
+        // Păstrăm plafonul ales de utilizator (implicit 50 kW), fără un prag automat înșelător.
+        // Nu schimbăm setările la încărcarea unui alt fișier.
         const initialIntervals = computeIntervals(result.rows, { ...settings, simulateBattery: false });
-        const peak = maxExportPower(initialIntervals);
-        const cap = peak > 0 ? Math.max(0.1, Math.round(peak * 0.7 * 10) / 10) : settings.exportCapKw;
-        const nextSettings = { ...settings, exportCapKw: cap };
-        const initialDays = groupDays(initialIntervals, nextSettings);
+        const initialDays = groupDays(initialIntervals, settings);
 
-        setSettings(nextSettings);
         setParsed(result);
         setDataVersion((v) => v + 1);
         setRangeStart(0);
@@ -195,6 +192,7 @@ export default function Dashboard() {
                 ["#period-kpis", "KPI"],
                 ["#daily-plot", "Grafice"],
                 ["#anomaly-events", "Anomalii"],
+                ...(mode === "operator" ? [["#telemetry", "Telemetrie"]] : []),
                 ["#ai-report", "Agent AI"],
               ].map(([href, text]) => (
                 <a
@@ -217,6 +215,7 @@ export default function Dashboard() {
               days={rangeDays}
               dayIdx={dayIdx}
               onChange={setDayIdx}
+              mode={mode}
             />
 
             <div id="period-kpis" className="scroll-mt-4">
@@ -242,7 +241,7 @@ export default function Dashboard() {
 
             {mode === "proprietar" ? (
               <OwnerInsights
-                items={fullIntervals}
+                items={rangeIntervals}
                 days={rangeDays}
                 period={rangePeriod}
                 day={day}
@@ -263,7 +262,11 @@ export default function Dashboard() {
               <AnomalyList mode={mode} dayEvents={dayEvents} allEvents={fullAnomalies.events} dayLabel={day.label} />
             </div>
 
-            <TelemetryTable items={fullIntervals} flags={fullAnomalies.flags} day={day} />
+            {mode === "operator" && (
+              <div id="telemetry" className="scroll-mt-4">
+                <TelemetryTable items={fullIntervals} flags={fullAnomalies.flags} day={day} />
+              </div>
+            )}
 
             <div id="ai-report" className="scroll-mt-4">
               <AiPanel
@@ -282,8 +285,8 @@ export default function Dashboard() {
       </main>
 
       <footer className="mx-auto max-w-7xl px-4 pb-8 pt-2 text-xs leading-relaxed text-slate-500 sm:px-6">
-        Datele CSV sunt procesate integral în browser. Spre server pleacă doar datele zilei selectate, la apăsarea unui
-        buton de analiză AI; cheile API nu se salvează.
+        Datele CSV sunt procesate integral în browser. La apăsarea unui buton AI sunt trimise spre server datele zilei,
+        KPI-urile și anomaliile pentru comparație. Cheile API introduse nu sunt stocate; folosiți conexiuni de încredere.
       </footer>
     </div>
   );

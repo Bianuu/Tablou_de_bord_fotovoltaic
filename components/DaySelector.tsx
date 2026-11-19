@@ -1,6 +1,6 @@
 "use client";
 
-import type { DaySummary } from "@/lib/types";
+import type { DaySummary, Mode } from "@/lib/types";
 import { fmt } from "@/lib/format";
 
 interface Props {
@@ -11,6 +11,7 @@ interface Props {
   days: DaySummary[];
   dayIdx: number;
   onChange: (i: number) => void;
+  mode: Mode;
 }
 
 export default function DaySelector({
@@ -21,6 +22,7 @@ export default function DaySelector({
   days,
   dayIdx,
   onChange,
+  mode,
 }: Props) {
   const totalDays = allDays.length;
   const isFiltered = totalDays > 0 && (rangeStart > 0 || rangeEnd < totalDays - 1);
@@ -32,8 +34,14 @@ export default function DaySelector({
 
   return (
     <section aria-label="Selectare interval și zi analizată" className="card space-y-4 !p-3 sm:!p-4">
-      {/* 1. Selector de interval */}
-      <div className="space-y-2.5 border-b border-slate-100 pb-3.5">
+      {/* Proprietarul vede întâi ziua; intervalul rămâne disponibil la cerere.
+          Operatorul pornește cu filtrul tehnic deschis. */}
+      <details key={mode} open={mode === "operator"} className="group border-b border-slate-100 pb-3.5">
+        <summary className="cursor-pointer select-none text-sm font-semibold text-slate-900 focus-visible:outline focus-visible:outline-2 focus-visible:outline-sky-500">
+          {mode === "proprietar" ? "Opțional: selectează un interval de zile" : "Filtrare interval analizat"}
+          <span className="ml-2 text-xs font-normal text-slate-500">({days.length} din {totalDays} zile)</span>
+        </summary>
+      <div className="mt-3 space-y-2.5">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <h2 className="text-sm font-semibold text-slate-900">Interval analizat</h2>
           <span className="text-xs font-medium text-slate-500">
@@ -131,6 +139,7 @@ export default function DaySelector({
           </p>
         )}
       </div>
+      </details>
 
       {/* 2. Selector de zi individuală din interval */}
       <div className="space-y-2.5">

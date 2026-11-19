@@ -12,6 +12,25 @@ export const maxDuration = 60;
 const PROVIDERS: Provider[] = ["anthropic", "openai", "gemini", "openrouter"];
 const MODEL_RE = /^[A-Za-z0-9._:\/@-]{1,120}$/;
 const MAX_SERIES_CHARS = 20_000;
+const MAX_REQUEST_CHARS = 65_000;
+const VALID_MODES = new Set(["proprietar", "operator"]);
+
+/** Verifică structura înainte de a trimite datele spre un provider taxat per token. */
+function validPayload(payload: any): boolean {
+  if (!payload || typeof payload !== "object" || !VALID_MODES.has(payload.mode)) return false;
+  if (typeof payload.dayLabel !== "string" || payload.dayLabel.length > 100) return false;
+  if (!Number.isInteger(payload.daysInPeriod) || payload.daysInPeriod < 1 || payload.daysInPeriod > 366) return false;
+  if (typeof payload.series !== "string" || payload.series.length < 1 || payload.series.length > MAX_SERIES_CHARS) return false;
+  if (payload.series.split("\n").length > 120) return false;
+  if (!payload.settings || typeof payload.settings !== "object") return false;
+  if (!["batteryKwh", "exportCapKw", "tariffRon"].every((field) => typeof payload.settings[field] === "number" && Number.isFinite(payload.settings[field]) && payload.settings[field] >= 0 && payload.settings[field] <= 1_000_000)) return false;
+  const core = ["ePv", "eLoad", "eImport", "eExport", "eCurt", "eExportEffective", "gridIntervals", "intervals"];
+  if (![payload.dayTotals, payload.periodTotals].every((totals) => totals && typeof totals === "object" && core.every((field) => typeof totals[field] === "number" && Number.isFinite(totals[field])))) return false;
+  if (!Array.isArray(payload.anomalies) || payload.anomalies.length > 40) return false;
+  if (!payload.anomalies.every((event: any) => event && typeof event === "object" &&
+    ["title", "detail", "severity"].every((field) => typeof event[field] === "string" && event[field].length <= 500))) return false;
+  return true;
+}
 
 function envKey(provider: Provider): string | undefined {
   const v = process.env[ENV_VARS[provider]];
@@ -29,9 +48,11 @@ function error(status: number, message: string) {
 
 /** Spune interfeței ce chei sunt configurate pe server (doar da/nu, niciodată valoarea). */
 export async function GET() {
-  const configured = Object.fromEntries(PROVIDERS.map((p) => [p, Boolean(envKey(p))])) as Record<Provider, boolean>;
+  const code = accessCode();
+  // O cheie de server fără cod nu trebuie să poată fi consumată de vizitatori anonimi.
+  const configured = Object.fromEntries(PROVIDERS.map((p) => [p, Boolean(envKey(p) && code)])) as Record<Provider, boolean>;
   return NextResponse.json(
-    { configured, accessCodeRequired: Boolean(accessCode()) },
+    { configured, accessCodeRequired: Boolean(code), serverKeysNeedProtection: PROVIDERS.some((p) => Boolean(envKey(p))) && !code },
     { headers: { "cache-control": "no-store" } },
   );
 }
@@ -39,7 +60,11 @@ export async function GET() {
 export async function POST(req: Request) {
   let body: AnalyzeRequest & { accessCode?: string };
   try {
-    body = await req.json();
+    const declaredLength = Number(req.headers.get("content-length") ?? 0);
+    if (declaredLength > MAX_REQUEST_CHARS) return error(413, "Cererea AI depășește limita permisă.");
+    const raw = await req.text();
+    if (raw.length > MAX_REQUEST_CHARS) return error(413, "Cererea AI depășește limita permisă.");
+    body = JSON.parse(raw);
   } catch {
     return error(400, "Cererea nu este JSON valid.");
   }
@@ -63,12 +88,9 @@ export async function POST(req: Request) {
     return error(400, "Pentru butonul Claude, modelul trebuie să fie un ID Anthropic care începe cu „claude-”.");
   }
 
-  if (!payload || typeof payload !== "object" || typeof payload.series !== "string" || !payload.dayTotals || !payload.periodTotals) {
-    return error(400, "Lipsesc datele zilei de analizat.");
+  if (!validPayload(payload)) {
+    return error(400, "Datele pentru analiză sunt incomplete sau depășesc limitele acceptate.");
   }
-  if (payload.series.length > MAX_SERIES_CHARS) return error(413, "Seria trimisă este prea mare pentru o singură zi.");
-  if (!Array.isArray(payload.anomalies)) payload.anomalies = [];
-  payload.anomalies = payload.anomalies.slice(0, 40);
 
   // Cheia: întâi cea din interfață (BYOK), apoi cea din variabilele de mediu.
   const userKey = typeof body.apiKey === "string" ? body.apiKey.trim() : "";
@@ -82,7 +104,10 @@ export async function POST(req: Request) {
       );
     }
     const code = accessCode();
-    if (code && body.accessCode !== code) {
+    if (!code) {
+      return error(503, "Cheile de pe server sunt dezactivate până configurezi SERVER_KEYS_ACCESS_CODE în Vercel / .env.local. Alternativ, introdu propria cheie API în pagină.");
+    }
+    if (body.accessCode !== code) {
       return error(401, "Cheia de pe server este protejată de un cod de acces. Introdu codul corect sau folosește cheia ta.");
     }
     apiKey = fromEnv;

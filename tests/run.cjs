@@ -1,6 +1,6 @@
 const assert = require('node:assert/strict');
 const { loadModules, settings, fixture } = require('./common.cjs');
-const { csv, energy, anomalies, prompt, models, close } = loadModules();
+const { csv, energy, anomalies, prompt, models, recommendations, close } = loadModules();
 let passed = 0;
 const near = (a,b,epsilon=1e-8) => assert.ok(Math.abs(a-b) < epsilon, `${a} ≠ ${b}`);
 const test = (name, fn) => { try { fn(); passed++; console.log('  ✓ ' + name); } catch (e) { console.error('  ✗ ' + name); throw e; } };
@@ -27,6 +27,25 @@ try {
   test('plafon 0 / 2 / 3 / 10 kW: curtailment descrescător', () => {
     const values = [0,2,3,10].map(cap=>calc(fixture(1),{...settings,exportCapKw:cap}).totals.eCurt);
     assert.deepEqual(values,[72,24,0,0]);
+  });
+  test('simularea opțională a bateriei NU modifică exportul brut sau curtailment-ul standard', () => {
+    const off=calc(fixture(2),{...settings,simulateBattery:false});
+    const on=calc(fixture(2),{...settings,simulateBattery:true});
+    near(off.totals.eCurt,on.totals.eCurt);
+    near(off.totals.eExport,on.totals.eExport);
+    near(off.totals.eExportEffective,on.totals.eExportEffective);
+    assert.ok(on.totals.eAbsorbed>0 && off.totals.eAbsorbed===0);
+  });
+  test('recomandările proprietarului respectă intervalul selectat, inclusiv indecșii globali', () => {
+    const all=calc(fixture(10,{pv:4,load:1,soc:100}));
+    const last=all.days.slice(-2);
+    const filtered=all.intervals.slice(last[0].start,last[1].end+1);
+    const totals=energy.summarize(filtered,settings);
+    const recs=recommendations.ownerRecommendations(filtered,last,totals,settings,[]);
+    const surplus=recs.find(r=>r.title.includes('consumatorii mari'));
+    assert.ok(surplus?.text.includes('9,0 kWh pe zi'),surplus?.text);
+    const battery=recs.find(r=>r.title.includes('Bateria se umple'));
+    assert.ok(battery?.text.includes('În 2 din 2 zile'),battery?.text);
   });
   test('delta SOC pe interval consecutiv se reflectă în bilanț', () => {
     const r = calc('timestamp,pv_kw,load_kw,battery_soc_pct\n01-06-26 00:00,0,0,50\n01-06-26 00:15,0,0,49');

@@ -16,7 +16,7 @@ function loadModules() {
     throw new Error('Nu pot compila bibliotecile. Rulează npm ci. ' + String(e.stderr ?? e.message));
   }
   const get = (name) => require(join(out, name + '.js'));
-  return { csv: get('csv'), energy: get('energy'), anomalies: get('anomalies'), prompt: get('prompt'), models: get('models'), close: () => rmSync(out, {recursive:true,force:true}) };
+  return { csv: get('csv'), energy: get('energy'), anomalies: get('anomalies'), prompt: get('prompt'), models: get('models'), recommendations: get('recommendations'), close: () => rmSync(out, {recursive:true,force:true}) };
 }
 const settings = { batteryKwh:100, exportCapKw:2, tariffRon:1.3, simulateBattery:false, sigma:3.2, socJumpPct:15 };
 function fixture(days=30, opts={}) {

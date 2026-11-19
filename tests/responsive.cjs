@@ -13,6 +13,9 @@ const checks = [
   ['grafic lunar derulabil', src('components/MonthlyChart.tsx').includes('min-w-[720px]') && src('components/MonthlyChart.tsx').includes('overflow-x-auto')],
   ['fișe telemetrie pe mobil', src('components/TelemetryTable.tsx').includes('md:hidden') && src('components/TelemetryTable.tsx').includes('Exclus din KPI')],
   ['text AI fără overflow', src('components/SimpleMarkdown.tsx').includes('break-words')],
+  ['proprietarul are rezumatul zilnic', src('components/OwnerInsights.tsx').includes('Pe scurt, în ziua de')],
+  ['telemetria completă este doar în modul Operator', src('components/Dashboard.tsx').includes('{mode === \"operator\" && (') || src('components/Dashboard.tsx').includes('{mode === "operator" && (')],
+  ['opțiunile bateriei și pragurile tehnice sunt accesibile', src('components/SettingsPanel.tsx').includes('Simulează redistribuire surplus tăiat') && src('components/SettingsPanel.tsx').includes('Prag vârf consum')],
   ['accesibilitate input pe mobil', src('app/globals.css').includes('font-size: 16px !important')],
 ];
 for (const [name, ok] of checks) { assert.ok(ok, name); console.log(' ✓ ' + name); }

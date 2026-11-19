@@ -19,6 +19,7 @@ interface Props {
 interface ServerInfo {
   configured: Record<Provider, boolean>;
   accessCodeRequired: boolean;
+  serverKeysNeedProtection?: boolean;
 }
 
 interface Result extends AnalyzeResponse {
@@ -133,6 +134,11 @@ export default function AiPanel({ mode, dataVersion, day, dayItems, dayEvents, p
         </p>
       </div>
 
+      {server?.serverKeysNeedProtection && (
+        <p role="alert" className="mb-3 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
+          Cheile de pe server sunt dezactivate până setezi SERVER_KEYS_ACCESS_CODE în Vercel. Poți utiliza în continuare propria cheie direct în pagină.
+        </p>
+      )}
       <div className="grid gap-4 lg:grid-cols-2">
         {/* Butonul 1: exclusiv Anthropic Claude */}
         <div className="min-w-0 rounded-xl border border-[#e8c4b3] bg-[#fbf5f1] p-3 sm:p-4">

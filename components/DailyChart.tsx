@@ -66,17 +66,18 @@ export default function DailyChart({ items, dayLabel, settings, mode }: Props) {
       <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
         <h2 className="card-title">Curba zilei · {dayLabel}</h2>
         <p className="text-xs text-slate-500">
-          Rezoluție 15 minute · date brute nemodificate (inclusiv valori suspecte) · putere în kW pe axa stângă, SOC în % pe axa dreaptă
+          {mode === "proprietar" ? "Cum evoluează producția, consumul și bateria în fiecare sfert de oră" : "Rezoluție 15 minute · date brute nemodificate (inclusiv valori suspecte) · kW pe axa stângă, SOC % pe axa dreaptă"}
           {curtTotal > 0 ? ` · tăiat în această zi: ${fmt(curtTotal, 1)} kWh` : ""}
         </p>
       </div>
 
       <Legend
         items={[
-          { label: "Producție PV (pv_kw)", color: COLORS.pv, kind: "line" },
-          { label: "Consum (load_kw)", color: COLORS.load, kind: "line" },
+          { label: mode === "proprietar" ? "Energie produsă de panouri" : "Producție PV (pv_kw)", color: COLORS.pv, kind: "line" },
+          { label: mode === "proprietar" ? "Consum" : "Consum (load_kw)", color: COLORS.load, kind: "line" },
           { label: "Export estimat fără plafon", color: COLORS.export, kind: "dash" },
-          { label: "Putere tăiată (curtailed_kw)", color: COLORS.curt, kind: "hatch" },
+          { label: mode === "proprietar" ? "Surplus pierdut peste limită" : "Putere tăiată (curtailed_kw)", color: COLORS.curt, kind: "hatch" },
+          ...(mode === "operator" ? [{ label: "Putere tăiată, curbă (kW)", color: COLORS.curt, kind: "dash" as const }] : []),
           { label: `Plafon export ${fmt(cap, 1)} kW`, color: COLORS.cap, kind: "ref" },
           { label: "SOC baterie (%, axa dreaptă)", color: COLORS.soc, kind: "soc" },
         ]}
@@ -140,6 +141,19 @@ export default function DailyChart({ items, dayLabel, settings, mode }: Props) {
               isAnimationActive={false}
               name="Export"
             />
+            {mode === "operator" && (
+              <Line
+                yAxisId="kw"
+                type="linear"
+                dataKey="curt"
+                stroke={COLORS.curt}
+                strokeWidth={1.75}
+                strokeDasharray="3 3"
+                dot={false}
+                isAnimationActive={false}
+                name="Putere tăiată (kW)"
+              />
+            )}
             <Line
               yAxisId="soc"
               type="monotone"
