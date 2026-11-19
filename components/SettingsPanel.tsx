@@ -97,8 +97,8 @@ export default function SettingsPanel({ settings, onChange, maxExport, mode }: P
           </label>
           {mode === "operator" && (
             <div className="grid gap-3 sm:grid-cols-2">
-              <NumberField label="Prag vârf consum (σ)" value={settings.sigma} min={0.5} step={0.1} onCommit={(v) => set("sigma", v)} />
-              <NumberField label="Prag salt SOC (p.p. / 15 min)" value={settings.socJumpPct} min={0.5} step={0.5} onCommit={(v) => set("socJumpPct", v)} />
+              {/* <NumberField label="Prag vârf consum (σ)" value={settings.sigma} min={0.5} step={0.1} onCommit={(v) => set("sigma", v)} />
+              <NumberField label="Prag salt SOC (p.p. / 15 min)" value={settings.socJumpPct} min={0.5} step={0.5} onCommit={(v) => set("socJumpPct", v)} /> */}
             </div>
           )}
         </div>

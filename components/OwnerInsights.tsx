@@ -20,7 +20,7 @@ export default function OwnerInsights({ items, days, period, day, settings, even
 
   return (
     <section className="grid gap-5 lg:grid-cols-5">
-      <div className="card min-w-0 lg:col-span-2">
+      {/* <div className="card min-w-0 lg:col-span-2">
         <h2 className="card-title mb-3">Pe scurt, în ziua de {day.label}</h2>
         <ul className="space-y-2 text-sm text-slate-700">
           <li>
@@ -46,7 +46,7 @@ export default function OwnerInsights({ items, days, period, day, settings, even
           )}
         </ul>
         {settings.simulateBattery && <BatterySimNote period={period} settings={settings} />}
-      </div>
+      </div> */}
 
       <div className="card min-w-0 lg:col-span-3">
         <h2 className="card-title mb-3">Recomandări practice</h2>
