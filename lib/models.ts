@@ -7,8 +7,6 @@ export interface ModelOption {
 
 /**
  * Modele Claude disponibile pentru butonul „Analizează cu Claude”.
- * claude-3-5-sonnet și claude-3-5-haiku au fost retrase de Anthropic (oct. 2025, feb. 2026),
- * iar claude-sonnet-4-5 se retrage pe 30 noiembrie 2026, așa că lista folosește familia curentă.
  * Câmpul „Alt model Claude” permite orice alt ID valid.
  */
 export const CLAUDE_MODELS: ModelOption[] = [
@@ -45,8 +43,8 @@ export const OTHER_PROVIDERS: OtherProvider[] = [
     label: "Google Gemini",
     envVar: "GEMINI_API_KEY",
     keyPlaceholder: "AIza…",
-    defaultModel: "gemini-2.5-flash",
-    suggestions: ["gemini-2.5-flash", "gemini-2.5-pro", "gemini-2.5-flash-lite"],
+    defaultModel: "gemini-3.8-flash",
+    suggestions: ["gemini-3.8-flash", "gemini-3.5-flash", "gemini-2.5-flash"],
     docsUrl: "https://ai.google.dev/gemini-api/docs/models",
   },
   {
@@ -57,9 +55,9 @@ export const OTHER_PROVIDERS: OtherProvider[] = [
     defaultModel: "openai/gpt-4o",
     suggestions: [
       "openai/gpt-4o",
-      "google/gemini-2.5-flash",
+      "google/gemini-3.8-flash",
       "openai/gpt-4o-mini",
-      "google/gemini-2.5-pro",
+      "google/gemini-2.5-flash",
     ],
     docsUrl: "https://openrouter.ai/models",
   },
