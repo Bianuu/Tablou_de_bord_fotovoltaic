@@ -20,11 +20,6 @@ export interface LlmResult {
 const MAX_OUTPUT_TOKENS = 8000;
 const TIMEOUT_MS = 55_000;
 
-/** Modele Claude din familia 5.5: acceptă `output_config.effort`. */
-const CLAUDE_EFFORT_MODELS = new Set(["claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-5-5"]);
-/** Modele care acceptă fallback-ul automat pe server la un refuz al filtrelor de siguranță. */
-const CLAUDE_FALLBACK_MODELS = new Set(["claude-opus-5-5", "claude-sonnet-5-5"]);
-
 function statusMessage(provider: string, status: number, detail: string): string {
   const d = detail ? ` Detalii: ${detail}` : "";
   switch (status) {
@@ -51,19 +46,32 @@ function statusMessage(provider: string, status: number, detail: string): string
 }
 
 async function postJson(url: string, headers: Record<string, string>, body: unknown, providerLabel: string): Promise<any> {
-  let res: Response;
-  try {
-    res = await fetch(url, {
-      method: "POST",
-      headers: { "content-type": "application/json", ...headers },
-      body: JSON.stringify(body),
-      signal: AbortSignal.timeout(TIMEOUT_MS),
-      cache: "no-store",
-    });
-  } catch (e) {
-    const timeout = e instanceof Error && (e.name === "TimeoutError" || e.name === "AbortError");
-    throw new LlmError(timeout ? 504 : 502, timeout ? statusMessage(providerLabel, 504, "") : `Nu m-am putut conecta la ${providerLabel}.`);
+  let res: Response | null = null;
+
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      res = await fetch(url, {
+        method: "POST",
+        headers: { "content-type": "application/json", ...headers },
+        body: JSON.stringify(body),
+        signal: AbortSignal.timeout(TIMEOUT_MS),
+        cache: "no-store",
+      });
+    } catch (e) {
+      const timeout = e instanceof Error && (e.name === "TimeoutError" || e.name === "AbortError");
+      throw new LlmError(timeout ? 504 : 502, timeout ? statusMessage(providerLabel, 504, "") : `Nu m-am putut conecta la ${providerLabel}.`);
+    }
+
+    // Reîncearcă automat o dată după 2 secunde dacă serverul este temporar supraîncărcat (503)
+    if (res.status === 503 && attempt === 0) {
+      await new Promise((resolve) => setTimeout(resolve, 2000));
+      continue;
+    }
+    break;
   }
+
+  if (!res) throw new LlmError(502, `Nu m-am putut conecta la ${providerLabel}.`);
+
   const raw = await res.text();
   let data: any = null;
   try {
@@ -86,30 +94,11 @@ async function callAnthropic(apiKey: string, model: string, system: string, user
   const messages: Anthropic.MessageParam[] = [{ role: "user", content: user }];
 
   try {
-    if (CLAUDE_FALLBACK_MODELS.has(model)) {
-      // Dacă filtrele de siguranță refuză cererea, API-ul o reia automat pe un model compatibil.
-      const response = await client.beta.messages.create({
-        model,
-        max_tokens: MAX_OUTPUT_TOKENS,
-        system,
-        messages,
-        output_config: { effort: "medium" },
-        betas: ["server-side-fallback-2026-07-01"],
-        fallbacks: "default",
-      });
-      const text = response.content
-        .flatMap((b) => (b.type === "text" ? [b.text] : []))
-        .join("\n")
-        .trim();
-      return finishClaude(text, response.stop_reason, response.model);
-    }
-
     const response = await client.messages.create({
       model,
       max_tokens: MAX_OUTPUT_TOKENS,
       system,
       messages,
-      ...(CLAUDE_EFFORT_MODELS.has(model) ? { output_config: { effort: "medium" as const } } : {}),
     });
     const text = response.content
       .flatMap((b) => (b.type === "text" ? [b.text] : []))

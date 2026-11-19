@@ -12,9 +12,9 @@ export interface ModelOption {
  * Câmpul „Alt model Claude” permite orice alt ID valid.
  */
 export const CLAUDE_MODELS: ModelOption[] = [
-  { id: "claude-sonnet-5-5", label: "Sonnet 5.5 (implicit)" },
-  { id: "claude-opus-5-5", label: "Opus 5.5 (cel mai capabil)" },
-  { id: "claude-haiku-5-5", label: "Haiku 5.5 (rapid)" },
+  { id: "claude-sonnet-4-6", label: "Sonnet 4.6 (implicit)" },
+  { id: "claude-opus-4-6", label: "Opus 4.6 (cel mai capabil)" },
+  { id: "claude-haiku-4-5-20251001", label: "Haiku 4.5 (rapid)" },
 ];
 
 export const DEFAULT_CLAUDE_MODEL = CLAUDE_MODELS[0].id;
@@ -36,8 +36,8 @@ export const OTHER_PROVIDERS: OtherProvider[] = [
     label: "OpenAI / ChatGPT",
     envVar: "OPENAI_API_KEY",
     keyPlaceholder: "sk-…",
-    defaultModel: "gpt-6.2-sol",
-    suggestions: ["gpt-6.2-sol", "gpt-6.2-astra", "gpt-5.5"],
+    defaultModel: "gpt-4o",
+    suggestions: ["gpt-4o", "gpt-4.1", "gpt-4o-mini"],
     docsUrl: "https://platform.openai.com/docs/models",
   },
   {
@@ -45,8 +45,8 @@ export const OTHER_PROVIDERS: OtherProvider[] = [
     label: "Google Gemini",
     envVar: "GEMINI_API_KEY",
     keyPlaceholder: "AIza…",
-    defaultModel: "gemini-4-hydrogen",
-    suggestions: ["gemini-4-hydrogen", "gemini-4-neon", "gemini-3.5-flash"],
+    defaultModel: "gemini-2.5-flash",
+    suggestions: ["gemini-2.5-flash", "gemini-2.5-pro", "gemini-2.5-flash-lite"],
     docsUrl: "https://ai.google.dev/gemini-api/docs/models",
   },
   {
@@ -54,8 +54,13 @@ export const OTHER_PROVIDERS: OtherProvider[] = [
     label: "OpenRouter",
     envVar: "OPENROUTER_API_KEY",
     keyPlaceholder: "sk-or-…",
-    defaultModel: "openai/gpt-6.2-sol",
-    suggestions: ["openai/gpt-6.2-sol", "google/gemini-4-hydrogen", "openai/gpt-6.2-astra", "google/gemini-4-neon"],
+    defaultModel: "openai/gpt-4o",
+    suggestions: [
+      "openai/gpt-4o",
+      "google/gemini-2.5-flash",
+      "openai/gpt-4o-mini",
+      "google/gemini-2.5-pro",
+    ],
     docsUrl: "https://openrouter.ai/models",
   },
 ];
