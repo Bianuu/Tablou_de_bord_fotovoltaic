@@ -45,7 +45,30 @@ export default function TelemetryTable({ items, flags, day }: Props) {
   const visible = rows.slice(page * pageSize, page * pageSize + pageSize);
 
   const download = () => {
-    const header = "timestamp;source_line;pv_kw;load_kw;battery_soc_pct;pv_consum_inclus_in_kpi;motiv_excludere;grid_reliable;delta_soc_pp;delta_e_bat_kwh;e_grid_kwh;p_export_kw;p_curtailed_kw;e_curtailed_kwh;anomalii";
+    const esc = (v: unknown) => {
+      const s = String(v ?? "");
+      return /[;"\r\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+    };
+
+    const headers = [
+      "timestamp",
+      "source_line",
+      "pv_kw",
+      "load_kw",
+      "battery_soc_pct",
+      "pv_consum_inclus_in_kpi",
+      "motiv_excludere",
+      "grid_reliable",
+      "delta_soc_pp",
+      "delta_e_bat_kwh",
+      "e_grid_kwh",
+      "p_export_kw",
+      "p_curtailed_kw",
+      "e_curtailed_kw",
+      "anomalii",
+    ];
+
+    const header = headers.join(";");
     const lines = rows.map((it) =>
       [
         `${it.dayLabel} ${it.time}`,
@@ -56,16 +79,21 @@ export default function TelemetryTable({ items, flags, day }: Props) {
         it.energyValid ? "da" : "nu",
         it.gridIssue ?? "",
         it.gridReliable ? "da" : "nu",
-        it.dSoc ?? "",
+        it.dSoc !== null && it.dSoc !== undefined ? Number(it.dSoc.toFixed(2)) : "",
         it.gridReliable ? it.dBat.toFixed(4) : "",
         it.gridReliable ? it.eGrid.toFixed(4) : "",
         it.gridReliable ? it.pExport.toFixed(3) : "",
         it.gridReliable ? it.pCurt.toFixed(3) : "",
         it.gridReliable ? it.eCurt.toFixed(4) : "",
         (flags[it.idx] ?? []).map((f) => ANOMALY_LABELS[f]).join(" | "),
-      ].join(";"),
+      ]
+        .map(esc)
+        .join(";"),
     );
-    const blob = new Blob(["﻿" + [header, ...lines].join("\n")], { type: "text/csv;charset=utf-8" });
+
+    const blob = new Blob(["\uFEFF" + [header, ...lines].join("\r\n")], {
+      type: "text/csv;charset=utf-8;",
+    });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
