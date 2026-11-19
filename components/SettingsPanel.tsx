@@ -45,10 +45,10 @@ export default function SettingsPanel({ settings, onChange, maxExport, mode }: P
             <NumberInput id="cap-number" value={settings.exportCapKw} min={0} step={step} onCommit={(v) => set("exportCapKw", v)} wide />
           </div>
         </div>
-        <p className="mt-2 text-xs leading-relaxed text-slate-600">
+        {/* <p className="mt-2 text-xs leading-relaxed text-slate-600">
           Putere de export maximă estimată: {fmt(maxExport, 2)} kW. Surplusul peste plafon este calculat ca energie tăiată.
           <span className="block sm:hidden"> Baterie: {fmt(settings.batteryKwh, 0)} kWh (estimare; modificabilă la parametri suplimentari).</span>
-        </p>
+        </p> */}
       </div>
 
       <button
@@ -82,18 +82,18 @@ export default function SettingsPanel({ settings, onChange, maxExport, mode }: P
         </div>
         <div className="flex flex-col gap-4 border-t border-slate-100 pt-4 lg:flex-row lg:items-start lg:gap-8">
           <label className="flex min-w-0 max-w-xl cursor-pointer items-start gap-3 text-sm">
-            <input
+            {/* <input
               type="checkbox"
               checked={settings.simulateBattery}
               onChange={(e) => set("simulateBattery", e.target.checked)}
               className="mt-0.5 h-5 w-5 shrink-0 accent-absorb"
-            />
-            <span>
+            /> */}
+            {/* <span>
               <span className="font-medium">Simulează redistribuire surplus tăiat în baterie</span>
               <span className="block text-xs leading-relaxed text-slate-500">
                 Comparație orientativă: cât din energia tăiată ar fi încăput în baterie până la 100% SOC, fără modificarea CSV-ului.
               </span>
-            </span>
+            </span> */}
           </label>
           {mode === "operator" && (
             <div className="grid gap-3 sm:grid-cols-2">
