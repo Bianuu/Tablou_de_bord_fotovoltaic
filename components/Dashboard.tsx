@@ -32,6 +32,8 @@ export default function Dashboard() {
   const [dataVersion, setDataVersion] = useState(0);
   const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS);
   const [mode, setMode] = useState<Mode>("proprietar");
+  const [rangeStart, setRangeStart] = useState(0);
+  const [rangeEnd, setRangeEnd] = useState(0);
   const [dayIdx, setDayIdx] = useState(0);
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -44,14 +46,24 @@ export default function Dashboard() {
         const text = await file.text();
         const result = parseCsv(text, file.name);
         // Plafonul implicit: 70% din cea mai mare putere de export din fișier, ca să se vadă efectul.
-        const peak = maxExportPower(computeIntervals(result.rows, { ...settings, simulateBattery: false }));
+        const initialIntervals = computeIntervals(result.rows, { ...settings, simulateBattery: false });
+        const peak = maxExportPower(initialIntervals);
         const cap = peak > 0 ? Math.max(0.1, Math.round(peak * 0.7 * 10) / 10) : settings.exportCapKw;
-        setSettings((s) => ({ ...s, exportCapKw: cap }));
+        const nextSettings = { ...settings, exportCapKw: cap };
+        const initialDays = groupDays(initialIntervals, nextSettings);
+
+        setSettings(nextSettings);
         setParsed(result);
         setDataVersion((v) => v + 1);
+        setRangeStart(0);
+        setRangeEnd(Math.max(0, initialDays.length - 1));
         setDayIdx(0);
       } catch (e) {
-        setLoadError(e instanceof CsvError ? e.message : `Fișierul nu a putut fi citit: ${e instanceof Error ? e.message : String(e)}`);
+        setLoadError(
+          e instanceof CsvError
+            ? e.message
+            : `Fișierul nu a putut fi citit: ${e instanceof Error ? e.message : String(e)}`,
+        );
       } finally {
         setLoading(false);
       }
@@ -59,19 +71,83 @@ export default function Dashboard() {
     [settings],
   );
 
-  const intervals = useMemo(() => (parsed ? computeIntervals(parsed.rows, settings) : []), [parsed, settings]);
-  const days = useMemo(() => groupDays(intervals, settings), [intervals, settings]);
-  const anomalies = useMemo(() => detectAnomalies(intervals, days, settings), [intervals, days, settings]);
-  const period = useMemo(() => summarize(intervals, settings), [intervals, settings]);
-  const maxExport = useMemo(() => maxExportPower(intervals), [intervals]);
+  // Calcule pe întreaga perioadă din CSV (păstrează continuitatea ΔSOC la miezul nopții și contextul global).
+  const fullIntervals = useMemo(() => (parsed ? computeIntervals(parsed.rows, settings) : []), [parsed, settings]);
+  const fullDays = useMemo(() => groupDays(fullIntervals, settings), [fullIntervals, settings]);
+  const fullAnomalies = useMemo(
+    () => detectAnomalies(fullIntervals, fullDays, settings),
+    [fullIntervals, fullDays, settings],
+  );
+  const fullPeriod = useMemo(() => summarize(fullIntervals, settings), [fullIntervals, settings]);
+  const maxExport = useMemo(() => maxExportPower(fullIntervals), [fullIntervals]);
+
+  // Limite sigure pentru intervalul selectat.
+  const safeRangeStart = Math.min(rangeStart, Math.max(0, fullDays.length - 1));
+  const safeRangeEnd = Math.min(Math.max(safeRangeStart, rangeEnd), Math.max(0, fullDays.length - 1));
+  const isFiltered = fullDays.length > 0 && (safeRangeStart > 0 || safeRangeEnd < fullDays.length - 1);
+
+  const rangeDays = useMemo(
+    () => fullDays.slice(safeRangeStart, safeRangeEnd + 1),
+    [fullDays, safeRangeStart, safeRangeEnd],
+  );
+
+  const rangeIntervals = useMemo(() => {
+    if (!isFiltered || rangeDays.length === 0) return fullIntervals;
+    const startIdx = rangeDays[0].start;
+    const endIdx = rangeDays[rangeDays.length - 1].end;
+    return fullIntervals.slice(startIdx, endIdx + 1);
+  }, [isFiltered, rangeDays, fullIntervals]);
+
+  const rangePeriod = useMemo(
+    () => (isFiltered ? summarize(rangeIntervals, settings) : fullPeriod),
+    [isFiltered, rangeIntervals, settings, fullPeriod],
+  );
+
+  const rangeDayKeys = useMemo(() => new Set(rangeDays.map((d) => d.key)), [rangeDays]);
+  const rangeAnomalies = useMemo(
+    () =>
+      isFiltered
+        ? { ...fullAnomalies, events: fullAnomalies.events.filter((e) => rangeDayKeys.has(e.dayKey)) }
+        : fullAnomalies,
+    [isFiltered, fullAnomalies, rangeDayKeys],
+  );
 
   useEffect(() => {
-    if (dayIdx > days.length - 1) setDayIdx(Math.max(0, days.length - 1));
-  }, [days.length, dayIdx]);
+    if (dayIdx > rangeDays.length - 1) setDayIdx(Math.max(0, rangeDays.length - 1));
+  }, [rangeDays.length, dayIdx]);
 
-  const day = days[Math.min(dayIdx, Math.max(0, days.length - 1))];
-  const dayItems = useMemo(() => (day ? intervals.slice(day.start, day.end + 1) : []), [intervals, day]);
-  const dayEvents = useMemo(() => (day ? anomalies.events.filter((e) => e.dayKey === day.key) : []), [anomalies, day]);
+  const handleRangeChange = useCallback(
+    (newStart: number, newEnd: number) => {
+      const currentDay = rangeDays[Math.min(dayIdx, Math.max(0, rangeDays.length - 1))];
+      setRangeStart(newStart);
+      setRangeEnd(newEnd);
+      if (currentDay) {
+        const nextDays = fullDays.slice(newStart, newEnd + 1);
+        const preservedIdx = nextDays.findIndex((d) => d.key === currentDay.key);
+        setDayIdx(preservedIdx >= 0 ? preservedIdx : 0);
+      } else {
+        setDayIdx(0);
+      }
+    },
+    [rangeDays, dayIdx, fullDays],
+  );
+
+  const day = rangeDays[Math.min(dayIdx, Math.max(0, rangeDays.length - 1))];
+  const dayItems = useMemo(
+    () => (day ? fullIntervals.slice(day.start, day.end + 1) : []),
+    [fullIntervals, day],
+  );
+  const dayEvents = useMemo(
+    () => (day ? fullAnomalies.events.filter((e) => e.dayKey === day.key) : []),
+    [fullAnomalies, day],
+  );
+
+  const rangeLabel =
+    rangeDays.length > 0
+      ? rangeDays.length === 1
+        ? rangeDays[0].label
+        : `${rangeDays[0].label} – ${rangeDays[rangeDays.length - 1].label}`
+      : "";
 
   return (
     <div className="min-h-screen">
@@ -85,40 +161,47 @@ export default function Dashboard() {
             {loadError && (
               <div className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">{loadError}</div>
             )}
-            <FileInfo parsed={parsed} days={days.length} intervals={intervals.length} />
-            {period.excludedGridIntervals > 0 && (
+            <FileInfo parsed={parsed} days={fullDays.length} intervals={fullIntervals.length} />
+            {fullPeriod.excludedGridIntervals > 0 && (
               <div role="alert" className="rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-950">
-                <strong>Acoperire parțială a bilanțului:</strong> {period.excludedGridIntervals} din {period.intervals} intervale au
-                bilanțul rețelei și curtailment-ul necalculabile din cauza valorilor suspecte, a SOC precedent suspect sau a
-                golurilor în măsurători. KPI-urile procentuale și exportul folosesc doar cele {period.gridIntervals} intervale
-                calculabile; producția/consumul însumează doar măsurătorile fără valori fizic suspecte.
-                Nu extrapolăm peste datele indisponibile.
+                <strong>Acoperire parțială a bilanțului:</strong> {fullPeriod.excludedGridIntervals} din{" "}
+                {fullPeriod.intervals} intervale au bilanțul rețelei și curtailment-ul necalculabile din cauza valorilor
+                suspecte, a SOC precedent suspect sau a golurilor în măsurători. KPI-urile procentuale și exportul folosesc
+                doar cele {fullPeriod.gridIntervals} intervale calculabile; producția/consumul însumează doar măsurătorile
+                fără valori fizic suspecte. Nu extrapolăm peste datele indisponibile.
               </div>
             )}
-            {period.invalidIntervals > 0 && (
+            {fullPeriod.invalidIntervals > 0 && (
               <div role="alert" className="rounded-lg border border-orange-300 bg-orange-50 px-4 py-3 text-sm text-orange-950">
-                <strong>Valori brute suspecte, păstrate în fișier:</strong> {period.invalidIntervals} intervale sunt vizibile
-                nemodificate în grafic și tabel și marcate ca anomalii. Aceste intervale sunt excluse din TOATE KPI-urile
-                (inclusiv producție, consum și statistici). Intervalul următor poate avea și bilanțul rețelei indisponibil,
-                dacă SOC din rândul suspect este invalid. Consultă tabelul telemetric și secțiunea Anomalii.
+                <strong>Valori brute suspecte, păstrate în fișier:</strong> {fullPeriod.invalidIntervals} intervale sunt
+                vizibile nemodificate în grafic și tabel și marcate ca anomalii. Aceste intervale sunt excluse din TOATE
+                KPI-urile (inclusiv producție, consum și statistici). Intervalul următor poate avea și bilanțul rețelei
+                indisponibil, dacă SOC din rândul suspect este invalid. Consultă tabelul telemetric și secțiunea Anomalii.
               </div>
             )}
-            {(period.selfConsumptionRaw !== null && period.selfConsumption === null ||
-              period.selfSufficiencyRaw !== null && period.selfSufficiency === null) && (
+            {((fullPeriod.selfConsumptionRaw !== null && fullPeriod.selfConsumption === null) ||
+              (fullPeriod.selfSufficiencyRaw !== null && fullPeriod.selfSufficiency === null)) && (
               <div role="alert" className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-900">
-                Datele și capacitatea bateriei alese produc procente în afara intervalului fizic 0–100%.
-                KPI-urile afectate sunt marcate indisponibile; verificați capacitatea bateriei și profilul SOC.
+                Datele și capacitatea bateriei alese produc procente în afara intervalului fizic 0–100%. KPI-urile afectate
+                sunt marcate indisponibile; verificați capacitatea bateriei și profilul SOC.
               </div>
             )}
 
-            <nav className="mobile-scroll -mx-1 flex gap-2 overflow-x-auto px-1 pb-1 sm:hidden" aria-label="Navigare rapidă prin dashboard">
+            <nav
+              className="mobile-scroll -mx-1 flex gap-2 overflow-x-auto px-1 pb-1 sm:hidden"
+              aria-label="Navigare rapidă prin dashboard"
+            >
               {[
                 ["#period-kpis", "KPI"],
                 ["#daily-plot", "Grafice"],
                 ["#anomaly-events", "Anomalii"],
                 ["#ai-report", "Agent AI"],
               ].map(([href, text]) => (
-                <a key={href} href={href} className="inline-flex min-h-10 shrink-0 items-center rounded-full border border-slate-300 bg-white px-4 text-xs font-semibold text-slate-700 shadow-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-sky-500">
+                <a
+                  key={href}
+                  href={href}
+                  className="inline-flex min-h-10 shrink-0 items-center rounded-full border border-slate-300 bg-white px-4 text-xs font-semibold text-slate-700 shadow-sm focus-visible:outline focus-visible:outline-2 focus-visible:outline-sky-500"
+                >
                   {text}
                 </a>
               ))}
@@ -126,41 +209,81 @@ export default function Dashboard() {
 
             <SettingsPanel settings={settings} onChange={setSettings} maxExport={maxExport} mode={mode} />
 
-            <DaySelector days={days} dayIdx={dayIdx} onChange={setDayIdx} />
+            <DaySelector
+              allDays={fullDays}
+              rangeStart={safeRangeStart}
+              rangeEnd={safeRangeEnd}
+              onRangeChange={handleRangeChange}
+              days={rangeDays}
+              dayIdx={dayIdx}
+              onChange={setDayIdx}
+            />
 
-            <div id="period-kpis" className="scroll-mt-4"><KpiSection mode={mode} period={period} day={day.totals} dayLabel={day.label} dayCount={days.length} settings={settings} /></div>
+            <div id="period-kpis" className="scroll-mt-4">
+              <KpiSection
+                mode={mode}
+                period={rangePeriod}
+                fullPeriod={fullPeriod}
+                fullDayCount={fullDays.length}
+                isFiltered={isFiltered}
+                rangeLabel={rangeLabel}
+                day={day.totals}
+                dayLabel={day.label}
+                dayCount={rangeDays.length}
+                settings={settings}
+              />
+            </div>
 
-            <div id="daily-plot" className="scroll-mt-4"><DailyChart items={dayItems} dayLabel={day.label} settings={settings} mode={mode} /></div>
+            <div id="daily-plot" className="scroll-mt-4">
+              <DailyChart items={dayItems} dayLabel={day.label} settings={settings} mode={mode} />
+            </div>
 
-            <MonthlyChart days={days} dayIdx={dayIdx} onSelect={setDayIdx} simulate={settings.simulateBattery} />
+            <MonthlyChart days={rangeDays} dayIdx={dayIdx} onSelect={setDayIdx} simulate={settings.simulateBattery} />
 
             {mode === "proprietar" ? (
-              <OwnerInsights items={intervals} days={days} period={period} day={day} settings={settings} events={anomalies.events} />
+              <OwnerInsights
+                items={fullIntervals}
+                days={rangeDays}
+                period={rangePeriod}
+                day={day}
+                settings={settings}
+                events={rangeAnomalies.events}
+              />
             ) : (
-              <OperatorDetails period={period} day={day} settings={settings} anomalies={anomalies} dayCount={days.length} />
+              <OperatorDetails
+                period={rangePeriod}
+                day={day}
+                settings={settings}
+                anomalies={rangeAnomalies}
+                dayCount={rangeDays.length}
+              />
             )}
 
-            <div id="anomaly-events" className="scroll-mt-4"><AnomalyList mode={mode} dayEvents={dayEvents} allEvents={anomalies.events} dayLabel={day.label} /></div>
+            <div id="anomaly-events" className="scroll-mt-4">
+              <AnomalyList mode={mode} dayEvents={dayEvents} allEvents={fullAnomalies.events} dayLabel={day.label} />
+            </div>
 
-            <TelemetryTable items={intervals} flags={anomalies.flags} day={day} />
+            <TelemetryTable items={fullIntervals} flags={fullAnomalies.flags} day={day} />
 
-            <div id="ai-report" className="scroll-mt-4"><AiPanel
-              mode={mode}
-              dataVersion={dataVersion}
-              day={day}
-              dayItems={dayItems}
-              dayEvents={dayEvents}
-              period={period}
-              dayCount={days.length}
-              settings={settings}
-            /></div>
+            <div id="ai-report" className="scroll-mt-4">
+              <AiPanel
+                mode={mode}
+                dataVersion={dataVersion}
+                day={day}
+                dayItems={dayItems}
+                dayEvents={dayEvents}
+                period={fullPeriod}
+                dayCount={fullDays.length}
+                settings={settings}
+              />
+            </div>
           </>
         )}
       </main>
 
       <footer className="mx-auto max-w-7xl px-4 pb-8 pt-2 text-xs leading-relaxed text-slate-500 sm:px-6">
-        Datele CSV sunt procesate integral în browser. Spre server pleacă doar datele zilei selectate, la apăsarea unui buton de
-        analiză AI; cheile API nu se salvează.
+        Datele CSV sunt procesate integral în browser. Spre server pleacă doar datele zilei selectate, la apăsarea unui
+        buton de analiză AI; cheile API nu se salvează.
       </footer>
     </div>
   );
@@ -170,13 +293,14 @@ function FileInfo({ parsed, days, intervals }: { parsed: ParseResult; days: numb
   return (
     <div className="space-y-2">
       <p className="text-sm text-slate-600">
-        <span className="break-all font-medium text-slate-800">{parsed.fileName}</span> · {intervals.toLocaleString("ro-RO")} intervale în{" "}
-        {days} zile · format dată {parsed.timestampFormat} · separator „{parsed.delimiter}”
+        <span className="break-all font-medium text-slate-800">{parsed.fileName}</span> ·{" "}
+        {intervals.toLocaleString("ro-RO")} intervale în {days} zile · format dată {parsed.timestampFormat} · separator
+        „{parsed.delimiter}”
       </p>
       <p className="text-xs text-slate-500">
         Exportul și importul sunt estimate din SOC și capacitatea bateriei introdusă (implicit 100 kWh), fără pierderi.
-        Primul interval presupune ΔSOC=0; un interval lipsă nu este interpolat. Valorile brute suspecte sunt păstrate,
-        dar excluse din KPI-uri și semnalate separat.
+        Primul interval presupune ΔSOC=0; un interval lipsă nu este interpolat. Valorile brute suspecte sunt păstrate, dar
+        excluse din KPI-uri și semnalate separat.
       </p>
       {parsed.rejectedRows.length > 0 && (
         <details className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
@@ -189,11 +313,18 @@ function FileInfo({ parsed, days, intervals }: { parsed: ParseResult; days: numb
           </p>
           <div className="mt-3 max-h-64 overflow-auto">
             <table className="w-full text-left text-xs">
-              <thead><tr><th className="p-2">Linia</th><th className="p-2">Motiv</th><th className="p-2">Conținut CSV original</th></tr></thead>
+              <thead>
+                <tr>
+                  <th className="p-2">Linia</th>
+                  <th className="p-2">Motiv</th>
+                  <th className="p-2">Conținut CSV original</th>
+                </tr>
+              </thead>
               <tbody>
                 {parsed.rejectedRows.map((r) => (
                   <tr key={r.line} className="border-t border-amber-200">
-                    <td className="p-2">{r.line}</td><td className="p-2">{r.reason}</td>
+                    <td className="p-2">{r.line}</td>
+                    <td className="p-2">{r.reason}</td>
                     <td className="break-all p-2 font-mono">{r.rawLine}</td>
                   </tr>
                 ))}
