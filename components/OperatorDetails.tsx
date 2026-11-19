@@ -17,6 +17,7 @@ type Row = [string, (t: Totals) => string, string?];
 
 const BALANCE: Row[] = [
   ["Producție PV  Σ E_pv", (t) => `${fmt(t.ePv, 2)} kWh`],
+  ["Intervale rețea calculabile / excluse", (t) => `${t.gridIntervals} / ${t.excludedGridIntervals}`],
   ["Consum  Σ E_load", (t) => `${fmt(t.eLoad, 2)} kWh`],
   ["Încărcare baterie  Σ ΔE_bat > 0", (t) => `${fmt(t.eCharge, 2)} kWh`],
   ["Descărcare baterie  Σ |ΔE_bat < 0|", (t) => `${fmt(t.eDischarge, 2)} kWh`],
@@ -30,8 +31,8 @@ const BALANCE: Row[] = [
   ["Autoconsum (nelimitat)", (t) => fmtPct(t.selfConsumptionRaw, 2)],
   ["Autosuficiență (nelimitat)", (t) => fmtPct(t.selfSufficiencyRaw, 2)],
   [
-    "Verificare bilanț  E_pv − E_load − ΔE_bat − (Exp − Imp)",
-    (t) => `${fmt(t.ePv - t.eLoad - t.eBatNet - (t.eExport - t.eImport), 4)} kWh`,
+    "Verificare bilanț (intervale fiabile)",
+    (t) => `${fmt(t.ePvGrid - t.eLoadGrid - t.eBatNet - (t.eExport - t.eImport), 4)} kWh`,
     "text-slate-500",
   ],
 ];
@@ -47,7 +48,7 @@ const PEAKS: Row[] = [
 export default function OperatorDetails({ period, day, settings, anomalies, dayCount }: Props) {
   return (
     <section className="grid gap-5 xl:grid-cols-5">
-      <div className="card min-w-0 overflow-x-auto xl:col-span-3">
+      <div className="card min-w-0 xl:col-span-3">
         <h2 className="card-title mb-3">Bilanț energetic detaliat</h2>
         <MetricTable rows={BALANCE} day={day} period={period} dayCount={dayCount} />
         <h3 className="mb-2 mt-5 text-sm font-semibold text-slate-900">Puteri de vârf (15 min)</h3>
@@ -70,14 +71,15 @@ P_export(t) = max(0, E_grid(t) / Δt)
 P_curt(t)   = max(0, P_export(t) − ${fmt(settings.exportCapKw, 2)} kW)
 E_curt(t)   = P_curt(t) · Δt
 
-Autoconsum      = (ΣE_pv − ΣE_export) / ΣE_pv · 100
-Autosuficiență  = (ΣE_load − ΣE_import) / ΣE_load · 100
+Autoconsum      = (ΣE_pv_fiabil − ΣE_export) / ΣE_pv_fiabil · 100
+Autosuficiență  = (ΣE_load_fiabil − ΣE_import) / ΣE_load_fiabil · 100
 Energie export. = Σ max(0, E_grid(t))`}
         </pre>
         <ul className="mt-3 space-y-1.5 text-xs text-slate-600">
           <li>Profilul bateriei este cel din CSV; plafonul nu resimulează încărcarea bateriei.</li>
-          <li>Pentru primul rând din fișier ΔE_bat = 0 (nu există SOC anterior).</li>
-          <li>KPI-urile procentuale afișate în carduri sunt limitate la 0–100%; aici apar și valorile nelimitate.</li>
+          <li>Pentru primul rând din fișier ΔE_bat = 0 (ipoteză, nu măsurare).</li>
+          <li>După intervale lipsă, exportul/importul și curtailment-ul sunt indisponibile. Procentele și bilanțul folosesc doar intervalele fiabile.</li>
+          <li>Procentele în afara 0–100% sunt considerate inconsistente și nu sunt afișate în carduri; aici apar valorile brute.</li>
           <li>
             Vârf de consum: load &gt; μ + {fmt(settings.sigma, 1)}σ = {fmt(anomalies.loadMean, 2)} + {fmt(settings.sigma, 1)} ×{" "}
             {fmt(anomalies.loadStd, 2)} = <b>{fmt(anomalies.loadThreshold, 2)} kW</b> (μ și σ pe toată perioada).
@@ -92,6 +94,7 @@ Energie export. = Σ max(0, E_grid(t))`}
 
 function MetricTable({ rows, day, period, dayCount }: { rows: Row[]; day: DaySummary; period: Totals; dayCount: number }) {
   return (
+    <div className="mobile-scroll -mx-1 overflow-x-auto" tabIndex={0} role="region" aria-label="Bilanț tehnic comparativ, derulabil lateral">
     <table className="w-full min-w-[520px] text-sm">
       <thead>
         <tr className="border-b border-slate-200 text-left text-xs text-slate-500">
@@ -110,5 +113,6 @@ function MetricTable({ rows, day, period, dayCount }: { rows: Row[]; day: DaySum
         ))}
       </tbody>
     </table>
+    </div>
   );
 }

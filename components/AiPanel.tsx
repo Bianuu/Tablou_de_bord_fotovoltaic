@@ -7,6 +7,7 @@ import SimpleMarkdown from "./SimpleMarkdown";
 
 interface Props {
   mode: Mode;
+  dataVersion: number;
   day: DaySummary;
   dayItems: IntervalCalc[];
   dayEvents: AnomalyEvent[];
@@ -24,11 +25,12 @@ interface Result extends AnalyzeResponse {
   dayLabel: string;
   mode: Mode;
   localAnomalies: AnomalyEvent[];
+  signature: string;
 }
 
 const CUSTOM = "__custom__";
 
-export default function AiPanel({ mode, day, dayItems, dayEvents, period, dayCount, settings }: Props) {
+export default function AiPanel({ mode, dataVersion, day, dayItems, dayEvents, period, dayCount, settings }: Props) {
   const [server, setServer] = useState<ServerInfo | null>(null);
   const [claudeModel, setClaudeModel] = useState(DEFAULT_CLAUDE_MODEL);
   const [claudeCustom, setClaudeCustom] = useState("");
@@ -51,6 +53,12 @@ export default function AiPanel({ mode, day, dayItems, dayEvents, period, dayCou
       .catch(() => setServer(null));
   }, []);
 
+  const signature = JSON.stringify({
+    dataVersion, day: day.key, mode, batteryKwh: settings.batteryKwh, exportCapKw: settings.exportCapKw,
+    tariffRon: settings.tariffRon, simulateBattery: settings.simulateBattery,
+    sigma: settings.sigma, socJumpPct: settings.socJumpPct,
+  });
+
   const provider = OTHER_PROVIDERS.find((p) => p.id === otherProvider)!;
   const claudeModelId = claudeModel === CUSTOM ? claudeCustom.trim() : claudeModel;
   const usesServerKey = (p: Provider, key: string) => !key.trim() && Boolean(server?.configured[p]);
@@ -65,7 +73,7 @@ export default function AiPanel({ mode, day, dayItems, dayEvents, period, dayCou
     periodTotals: period,
     anomalies: dayEvents.slice(0, 40).map((e) => ({ severity: e.severity, title: e.title, detail: e.detail })),
     series: dayItems
-      .map((it) => `${it.time};${it.pv.toFixed(2)};${it.load.toFixed(2)};${it.soc.toFixed(1)};${it.eGrid.toFixed(3)};${it.pCurt.toFixed(2)}`)
+      .map((it) => `${it.time};${it.pv.toFixed(2)};${it.load.toFixed(2)};${it.soc.toFixed(1)};${it.gridReliable ? it.eGrid.toFixed(3) : "N/A"};${it.gridReliable ? it.pCurt.toFixed(2) : "N/A"};${it.energyValid ? "da" : "nu"}`)
       .join("\n"),
   });
 
@@ -90,6 +98,7 @@ export default function AiPanel({ mode, day, dayItems, dayEvents, period, dayCou
     }
     if (!req.apiKey && server?.accessCodeRequired) req.accessCode = accessCode.trim();
 
+    const requestSignature = signature;
     setLoading(target);
     setError(null);
     try {
@@ -103,7 +112,7 @@ export default function AiPanel({ mode, day, dayItems, dayEvents, period, dayCou
         setError(data?.error ?? `Serverul a răspuns cu eroarea ${res.status}.`);
         return;
       }
-      setResult({ ...(data as AnalyzeResponse), dayLabel: day.label, mode, localAnomalies: dayEvents });
+      setResult({ ...(data as AnalyzeResponse), dayLabel: day.label, mode, localAnomalies: dayEvents, signature: requestSignature });
     } catch {
       setError("Nu am putut contacta serverul aplicației.");
     } finally {
@@ -111,10 +120,10 @@ export default function AiPanel({ mode, day, dayItems, dayEvents, period, dayCou
     }
   };
 
-  const stale = result && (result.dayLabel !== day.label || result.mode !== mode);
+  const stale = result && result.signature !== signature;
 
   return (
-    <section className="card">
+    <section className="card" aria-label="Agent AI">
       <div className="mb-4">
         <h2 className="card-title">Agent AI · rezumat și anomalii pentru ziua {day.label}</h2>
         <p className="text-xs text-slate-500">
@@ -126,7 +135,7 @@ export default function AiPanel({ mode, day, dayItems, dayEvents, period, dayCou
 
       <div className="grid gap-4 lg:grid-cols-2">
         {/* Butonul 1: exclusiv Anthropic Claude */}
-        <div className="rounded-xl border border-[#e8c4b3] bg-[#fbf5f1] p-4">
+        <div className="min-w-0 rounded-xl border border-[#e8c4b3] bg-[#fbf5f1] p-3 sm:p-4">
           <p className="mb-3 text-sm font-semibold text-slate-900">1 · Anthropic Claude</p>
           <div className="grid gap-3 sm:grid-cols-2">
             <div>
@@ -169,7 +178,7 @@ export default function AiPanel({ mode, day, dayItems, dayEvents, period, dayCou
         </div>
 
         {/* Butonul 2: alți furnizori, fără Claude */}
-        <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+        <div className="min-w-0 rounded-xl border border-slate-200 bg-slate-50 p-3 sm:p-4">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <p className="text-sm font-semibold text-slate-900">2 · Alți furnizori (fără Claude)</p>
             <button type="button" className="btn-secondary" onClick={() => setOtherOpen((v) => !v)} aria-expanded={otherOpen}>
@@ -189,7 +198,7 @@ export default function AiPanel({ mode, day, dayItems, dayEvents, period, dayCou
                     role="radio"
                     aria-checked={otherProvider === p.id}
                     onClick={() => setOtherProvider(p.id)}
-                    className={`rounded-lg border px-3 py-1.5 text-sm font-medium transition ${
+                    className={`min-h-10 rounded-lg border px-3 py-2 text-sm font-medium transition ${
                       otherProvider === p.id ? "border-slate-900 bg-slate-900 text-white" : "border-slate-300 bg-white text-slate-700 hover:bg-slate-100"
                     }`}
                   >
@@ -242,23 +251,22 @@ export default function AiPanel({ mode, day, dayItems, dayEvents, period, dayCou
 
       {result && (
         <div className="mt-5 grid gap-4 lg:grid-cols-3">
-          <div className="rounded-xl border border-slate-200 p-4 lg:col-span-2">
+          <div className="min-w-0 rounded-xl border border-slate-200 p-3 sm:p-4 lg:col-span-2">
             <div className="mb-2 flex flex-wrap items-center gap-2 text-xs text-slate-500">
               <span className="chip bg-slate-900 text-white">{PROVIDER_LABELS[result.provider]}</span>
-              <span className="font-mono">{result.model}</span>
+              <span className="break-all font-mono">{result.model}</span>
               <span>· ziua {result.dayLabel}</span>
               <span>· mod {result.mode === "proprietar" ? "Proprietar" : "Operator Tehnic"}</span>
             </div>
             {stale && (
               <p className="mb-2 rounded bg-amber-50 px-2 py-1 text-xs text-amber-800">
-                Analiza este pentru ziua {result.dayLabel} în modul {result.mode === "proprietar" ? "Proprietar" : "Operator Tehnic"}. Apasă din
-                nou pentru selecția curentă.
+                Analiza este învechită: fișierul, ziua, modul, plafonul, capacitatea bateriei, tariful sau pragurile de anomalii s-au modificat. Rulează din nou analiza pentru datele curente.
               </p>
             )}
             {result.notice && <p className="mb-2 rounded bg-amber-50 px-2 py-1 text-xs text-amber-800">{result.notice}</p>}
             <SimpleMarkdown text={result.text} />
           </div>
-          <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+          <div className="min-w-0 rounded-xl border border-slate-200 bg-slate-50 p-3 sm:p-4">
             <p className="mb-2 text-sm font-semibold text-slate-900">Detecție locală (deterministă)</p>
             {result.localAnomalies.length === 0 ? (
               <p className="text-sm text-slate-600">Nicio anomalie detectată local în această zi.</p>

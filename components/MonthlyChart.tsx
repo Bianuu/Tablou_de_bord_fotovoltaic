@@ -59,7 +59,9 @@ export default function MonthlyChart({ days, dayIdx, onSelect, simulate }: Props
           ...(simulate ? [{ label: "Din energia tăiată, ar fi încăput în baterie (kWh)", color: COLORS.absorb, kind: "bar" as const }] : []),
         ]}
       />
-      <div className="h-[300px] w-full">
+      <p className="mb-1 text-[11px] text-slate-500 sm:hidden">Glisează lateral pentru toate cele 30 de zile; atinge o coloană pentru detalii.</p>
+      <div className="mobile-scroll -mx-1 overflow-x-auto pb-2 sm:mx-0 sm:overflow-visible" tabIndex={0} role="region" aria-label="Graficul pe 30 de zile, derulabil orizontal pe telefon">
+      <div className="h-[280px] min-w-[720px] sm:h-[300px] sm:min-w-0">
         <ResponsiveContainer width="100%" height="100%">
           <BarChart data={data} margin={{ top: 8, right: 4, bottom: 4, left: -8 }} onClick={select} barCategoryGap="18%" style={{ cursor: "pointer" }}>
             <CartesianGrid stroke="#e2e8f0" vertical={false} />
@@ -73,6 +75,7 @@ export default function MonthlyChart({ days, dayIdx, onSelect, simulate }: Props
             )}
           </BarChart>
         </ResponsiveContainer>
+      </div>
       </div>
     </section>
   );
@@ -88,7 +91,7 @@ function MonthlyTooltip({ active, payload, simulate }: { active?: boolean; paylo
   const p = payload?.[0]?.payload;
   if (!active || !p) return null;
   return (
-    <div className="rounded-lg border border-slate-200 bg-white/95 px-3 py-2 text-xs shadow-lg">
+    <div className="max-w-[min(86vw,300px)] rounded-lg border border-slate-200 bg-white/95 px-3 py-2 text-xs shadow-lg">
       <p className="mb-1 font-semibold text-slate-900">{p.full}</p>
       <Row color={COLORS.export} label="Export efectiv" value={`${fmt(p.exportEff, 1)} kWh`} />
       <Row color={COLORS.curt} label="Energie tăiată" value={`${fmt(p.curt, 1)} kWh (${fmtPct(p.curtPct)})`} />

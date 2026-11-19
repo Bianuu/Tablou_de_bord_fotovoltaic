@@ -9,7 +9,7 @@ export interface TsParts {
   mm: number;
 }
 
-/** Un rând valid din CSV. */
+/** Un rând cu timestamp și valori numerice interpretabile, inclusiv anomalii fizice. */
 export interface RawRow {
   ts: TsParts;
   /** Milisecunde calculate din componentele datei ca și cum ar fi UTC: pas constant de 15 minute, fără salturi de oră de vară. */
@@ -19,6 +19,15 @@ export interface RawRow {
   soc: number;
   /** Numărul liniei din fișier (1 = antetul). */
   line: number;
+  /** Valorile brute sunt păstrate; rândurile suspecte sunt vizibile, dar excluse din KPI. */
+  qualityIssues: string[];
+}
+
+/** Rând care nu poate fi plasat pe grila temporală ori nu poate fi interpretat numeric. */
+export interface RejectedCsvRow {
+  line: number;
+  rawLine: string;
+  reason: string;
 }
 
 export interface ParseResult {
@@ -27,7 +36,12 @@ export interface ParseResult {
   delimiter: string;
   /** Formatul de dată recunoscut în majoritatea rândurilor. */
   timestampFormat: string;
+  /** Numai rândurile fără timestamp/valori numerice interpretabile sau în afara grilei. */
   skipped: number;
+  /** Date brute excluse din import, dar păstrate pentru audit. */
+  rejectedRows: RejectedCsvRow[];
+  /** Număr de rânduri numerice suspecte păstrate în rows, excluse din KPI. */
+  suspiciousRows: number;
   duplicates: number;
   warnings: string[];
 }
@@ -58,11 +72,20 @@ export interface IntervalCalc {
   time: string;
   /** Minute de la miezul nopții. */
   minutes: number;
+  /** Valorile brute, nemodificate, inclusiv cele marcate suspecte. */
   pv: number;
   load: number;
   soc: number;
+  sourceLine: number;
+  qualityIssues: string[];
+  /** Rândul este utilizat pentru energie, vârfuri, SOC și statistici numai când este valid. */
+  energyValid: boolean;
+  /** Explicație pentru bilanțul necalculabil. */
+  gridIssue: string | null;
   /** Variația SOC față de rândul anterior (puncte procentuale); null pentru primul rând. */
   dSoc: number | null;
+  /** Bilanțul rețelei este calculabil numai dacă SOC precedent este la exact 15 minute (primul rând: ΔSOC=0 convențional). */
+  gridReliable: boolean;
   ePv: number;
   eLoad: number;
   dBat: number;
@@ -81,6 +104,15 @@ export interface IntervalCalc {
 
 export interface Totals {
   intervals: number;
+  /** Număr de intervale cu bilanț rețea/cutailment calculabil. */
+  gridIntervals: number;
+  /** Rânduri suspecte păstrate în grafic/tabel, dar excluse din toate KPI-urile. */
+  invalidIntervals: number;
+  /** Intervale excluse din KPI-urile derivate din rețea (după goluri în date). */
+  excludedGridIntervals: number;
+  /** Producția și consumul doar din intervalele cu bilanț de rețea disponibil (denominatori KPI). */
+  ePvGrid: number;
+  eLoadGrid: number;
   ePv: number;
   eLoad: number;
   eExport: number;
@@ -104,15 +136,15 @@ export interface Totals {
   socMin: number;
   socMax: number;
   curtailedIntervals: number;
-  /** Autoconsum (%) limitat la 0-100; null dacă nu există producție. */
+  /** Autoconsum (%) pe intervalele cu bilanț disponibil; null dacă rezultatul este imposibil sau nu există producție. */
   selfConsumption: number | null;
   selfConsumptionRaw: number | null;
-  /** Autosuficiență (%) limitată la 0-100; null dacă nu există consum. */
+  /** Autosuficiență (%) pe intervalele cu bilanț disponibil; null dacă rezultatul este imposibil sau nu există consum. */
   selfSufficiency: number | null;
   selfSufficiencyRaw: number | null;
   /** Energie tăiată ca procent din exportul brut. */
   curtPct: number;
-  savingsRon: number;
+  savingsRon: number | null;
 }
 
 export interface DaySummary {

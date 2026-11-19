@@ -7,7 +7,7 @@ function inline(text: string) {
     if (p.startsWith("**") && p.endsWith("**") && p.length > 4) return <strong key={i}>{p.slice(2, -2)}</strong>;
     if (p.startsWith("`") && p.endsWith("`") && p.length > 2)
       return (
-        <code key={i} className="rounded bg-slate-100 px-1 font-mono text-[0.85em]">
+        <code key={i} className="break-all rounded bg-slate-100 px-1 font-mono text-[0.85em]">
           {p.slice(1, -1)}
         </code>
       );
@@ -82,5 +82,5 @@ export default function SimpleMarkdown({ text }: { text: string }) {
   }
   flushPara();
   flushList();
-  return <div className="text-sm leading-relaxed text-slate-700">{blocks}</div>;
+  return <div className="min-w-0 break-words text-sm leading-relaxed text-slate-700">{blocks}</div>;
 }

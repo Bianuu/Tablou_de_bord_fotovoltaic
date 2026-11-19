@@ -34,7 +34,7 @@ export interface AnomalyResult {
  * 2. Consum peste media + σ·abaterea standard, calculate pe toate intervalele din fișier (σ implicit 3,2).
  * 3. Salt de SOC mai mare decât pragul (puncte procentuale într-un singur rând).
  * 4. Intervale lipsă (pas mai mare de 15 minute între rânduri) și zile cu mai puțin de 96 de intervale.
- * 5. Valori imposibile: putere negativă, SOC în afara 0-100%.
+ * 5. Valorile suspecte sunt păstrate în seria brută, marcate și excluse strict din KPI.
  */
 export function detectAnomalies(items: IntervalCalc[], days: DaySummary[], settings: Settings): AnomalyResult {
   const events: AnomalyEvent[] = [];
@@ -48,11 +48,12 @@ export function detectAnomalies(items: IntervalCalc[], days: DaySummary[], setti
 
   // Statistica consumului pe întreaga perioadă.
   let sum = 0;
-  for (const it of items) sum += it.load;
-  const mean = items.length ? sum / items.length : 0;
+  const valid = items.filter((it) => it.energyValid);
+  for (const it of valid) sum += it.load;
+  const mean = valid.length ? sum / valid.length : 0;
   let sq = 0;
-  for (const it of items) sq += (it.load - mean) ** 2;
-  const std = items.length > 1 ? Math.sqrt(sq / (items.length - 1)) : 0;
+  for (const it of valid) sq += (it.load - mean) ** 2;
+  const std = valid.length > 1 ? Math.sqrt(sq / (valid.length - 1)) : 0;
   const threshold = mean + settings.sigma * std;
 
   // Grupează intervale consecutive (în aceeași zi, fără goluri) care îndeplinesc o condiție.
@@ -77,8 +78,19 @@ export function detectAnomalies(items: IntervalCalc[], days: DaySummary[], setti
     return out;
   };
 
+  // 0. Date brute fizic suspecte (disponibile în tabel/grafic, excluse din KPI).
+  for (const it of items) {
+    if (it.energyValid) continue;
+    flag(it, "invalid_value");
+    push(
+      "invalid_value", "ridicată", it, it,
+      `Valoare suspectă în CSV la ${it.time} (linia ${it.sourceLine})`,
+      `${it.qualityIssues.join("; ")}. Datele PV/consum/SOC rămân afișate nealterate, dar rândul este exclus din KPI-urile energetice și statistici; bilanțul rețelei pentru intervalul următor poate fi de asemenea indisponibil dacă SOC curent este suspect.`,
+    );
+  }
+
   // 1. PV zero în orele de vârf.
-  for (const run of runs((it) => it.minutes >= PV_PEAK_START_MIN && it.minutes <= PV_PEAK_END_MIN && it.pv <= PV_ZERO_KW)) {
+  for (const run of runs((it) => it.minutes >= PV_PEAK_START_MIN && it.minutes <= PV_PEAK_END_MIN && it.energyValid && it.pv <= PV_ZERO_KW)) {
     run.forEach((it) => flag(it, "pv_zero_peak"));
     const a = run[0];
     const b = run[run.length - 1];
@@ -94,7 +106,7 @@ export function detectAnomalies(items: IntervalCalc[], days: DaySummary[], setti
 
   // 2. Vârfuri anormale de consum.
   if (std > 0) {
-    for (const run of runs((it) => it.load > threshold)) {
+    for (const run of runs((it) => it.energyValid && it.load > threshold)) {
       run.forEach((it) => flag(it, "load_spike"));
       const a = run[0];
       const b = run[run.length - 1];
@@ -111,9 +123,9 @@ export function detectAnomalies(items: IntervalCalc[], days: DaySummary[], setti
     }
   }
 
-  // 3. Salturi bruște de SOC și 5. valori imposibile.
+  // 3. Salturi bruște de SOC în măsurători consecutive (nu peste intervale lipsă).
   for (const it of items) {
-    if (it.dSoc !== null && Math.abs(it.dSoc) > settings.socJumpPct) {
+    if (it.energyValid && it.dSoc !== null && Math.abs(it.dSoc) > settings.socJumpPct) {
       flag(it, "soc_jump");
       const prevSoc = it.soc - it.dSoc;
       const afterGap = it.gapBeforeMin > 0 ? ` (după un gol de ${it.gapBeforeMin} minute în date)` : "";
@@ -126,14 +138,7 @@ export function detectAnomalies(items: IntervalCalc[], days: DaySummary[], setti
         `SOC s-a modificat cu ${fmt(it.dSoc, 1)} puncte procentuale într-un singur rând${afterGap}, adică ${fmt(Math.abs(it.dBat), 1)} kWh (${fmt(Math.abs(it.dBat) / 0.25, 1)} kW echivalent) pentru o baterie de ${fmt(settings.batteryKwh, 0)} kWh. Pragul este ${fmt(settings.socJumpPct, 0)} p.p. Poate fi o recalibrare BMS sau o eroare de citire.`,
       );
     }
-    const bad: string[] = [];
-    if (it.pv < 0) bad.push(`pv_kw negativ (${fmt(it.pv, 2)})`);
-    if (it.load < 0) bad.push(`load_kw negativ (${fmt(it.load, 2)})`);
-    if (it.soc < 0 || it.soc > 100) bad.push(`battery_soc_pct în afara 0–100 (${fmt(it.soc, 1)})`);
-    if (bad.length) {
-      flag(it, "invalid_value");
-      push("invalid_value", "ridicată", it, it, `Valoare invalidă la ${it.time}`, bad.join("; ") + ".");
-    }
+
   }
 
   // 4. Intervale lipsă între rânduri.
@@ -152,7 +157,7 @@ export function detectAnomalies(items: IntervalCalc[], days: DaySummary[], setti
         ? `Pas neregulat între ${prev.dayLabel} ${prev.time} și ${it.time}`
         : `${missing} interval(e) lipsă înainte de ${it.time}`,
       `Între ${prev.dayLabel} ${prev.time} și ${it.dayLabel} ${it.time} lipsesc ${it.gapBeforeMin} minute de date. ` +
-        `Variația SOC peste gol (${fmt(it.dSoc, 1)} p.p.) este atribuită integral intervalului ${it.time}, deci bilanțul acestui rând include energia întregului gol.`,
+        `Variația SOC peste acest gol nu poate fi alocată unui singur interval. Bilanțul de rețea și curtailment-ul de la ${it.time} au fost excluse din KPI-uri; energia PV și consumul măsurate rămân afișate și incluse numai dacă sunt valide.`,
     );
   }
 

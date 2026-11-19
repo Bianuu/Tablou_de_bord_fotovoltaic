@@ -40,10 +40,10 @@ export default function AnomalyList({ mode, dayEvents, allEvents, dayLabel }: Pr
         <div>
           <h2 className="card-title">Anomalii detectate local</h2>
           <p className="text-xs text-slate-500">
-            Detecție deterministă: PV 0 kW între 10:00–15:00, vârfuri de consum peste prag σ, salturi de SOC, intervale lipsă.
+            Detecție deterministă: Valori brute suspecte, PV 0 kW între 10:00–15:00, vârfuri de consum, salturi SOC și intervale lipsă.
           </p>
         </div>
-        <div className="flex rounded-lg border border-slate-300 bg-slate-100 p-0.5 text-sm">
+        <div className="flex max-w-full flex-wrap rounded-lg border border-slate-300 bg-slate-100 p-0.5 text-sm">
           <ScopeBtn active={scope === "day"} onClick={() => setScope("day")}>
             Ziua {dayLabel} ({dayEvents.length})
           </ScopeBtn>
@@ -77,7 +77,7 @@ export default function AnomalyList({ mode, dayEvents, allEvents, dayLabel }: Pr
                 {scope === "all" && <span className="text-xs text-slate-500">{e.dayLabel}</span>}
                 <span className="text-sm font-medium text-slate-900">{e.title}</span>
               </div>
-              <p className="mt-1 text-sm text-slate-600">{mode === "proprietar" ? OWNER_TEXT[e.type] : e.detail}</p>
+              <p className="mt-1 text-sm text-slate-600">{mode === "proprietar" && e.type !== "invalid_value" ? OWNER_TEXT[e.type] : e.detail}</p>
             </li>
           ))}
         </ul>
@@ -92,7 +92,7 @@ function ScopeBtn({ active, onClick, children }: { active: boolean; onClick: () 
       type="button"
       onClick={onClick}
       aria-pressed={active}
-      className={`rounded-md px-2.5 py-1 font-medium transition ${active ? "bg-white text-slate-900 shadow-sm" : "text-slate-600"}`}
+      className={`min-h-10 rounded-md px-3 py-2 font-medium transition ${active ? "bg-white text-slate-900 shadow-sm" : "text-slate-600"}`}
     >
       {children}
     </button>

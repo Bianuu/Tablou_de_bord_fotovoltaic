@@ -14,7 +14,7 @@ export default function UploadZone({ onFile, loading, error }: Props) {
   const [over, setOver] = useState(false);
 
   return (
-    <section className="mx-auto max-w-3xl space-y-4 py-6">
+    <section className="mx-auto max-w-3xl space-y-4 py-3 sm:py-6">
       <div
         role="button"
         tabIndex={0}
@@ -37,7 +37,7 @@ export default function UploadZone({ onFile, loading, error }: Props) {
           const f = e.dataTransfer.files?.[0];
           if (f) onFile(f);
         }}
-        className={`flex cursor-pointer flex-col items-center justify-center rounded-2xl border-2 border-dashed px-6 py-14 text-center transition ${
+        className={`flex cursor-pointer flex-col items-center justify-center rounded-2xl border-2 border-dashed px-4 py-10 text-center outline-none transition focus-visible:border-sky-500 focus-visible:ring-2 focus-visible:ring-sky-300 sm:px-6 sm:py-14 ${
           over ? "border-sky-500 bg-sky-50" : "border-slate-300 bg-white hover:border-slate-400"
         }`}
       >
@@ -45,7 +45,7 @@ export default function UploadZone({ onFile, loading, error }: Props) {
           <UploadIcon />
         </div>
         <p className="text-lg font-semibold">{loading ? "Se citește fișierul…" : "Încarcă fișierul CSV"}</p>
-        <p className="mt-1 text-sm text-slate-600">Trage fișierul aici sau dă click pentru a-l alege</p>
+        <p className="mt-1 text-sm text-slate-600">Atinge pentru a selecta CSV-ul sau trage-l aici de pe calculator</p>
         <input
           ref={inputRef}
           type="file"

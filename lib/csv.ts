@@ -20,7 +20,7 @@ const DMY = /^(\d{1,2})[-./](\d{1,2})[-./](\d{2}|\d{4})[ T]+(\d{1,2}):(\d{2})(?:
 const ISO = /^(\d{4})[-/](\d{1,2})[-/](\d{1,2})[ T]+(\d{1,2}):(\d{2})(?::(\d{2})(?:\.\d+)?)?\s*(?:Z|[+-]\d{2}:?\d{2})?$/i;
 
 function validParts(p: TsParts): number | null {
-  if (p.m < 1 || p.m > 12 || p.d < 1 || p.d > 31 || p.hh > 23 || p.mm > 59) return null;
+  if (p.m < 1 || p.m > 12 || p.d < 1 || p.d > 31 || p.hh < 0 || p.hh > 23 || p.mm < 0 || p.mm > 59) return null;
   const key = Date.UTC(p.y, p.m - 1, p.d, p.hh, p.mm);
   const check = new Date(key);
   // Respinge date imposibile (ex. 31-06), pe care Date.UTC le-ar muta în luna următoare.
@@ -120,57 +120,70 @@ export function parseCsv(text: string, fileName: string): ParseResult {
   }
 
   const rows: RawRow[] = [];
+  const rejectedRows: ParseResult["rejectedRows"] = [];
   const warnings: string[] = [];
   const formats = new Map<string, number>();
   let skipped = 0;
-  const badLines: string[] = [];
+  let suspiciousRows = 0;
+  // Pentru rândurile interpretate numeric păstrăm și textul inițial, inclusiv la duplicate.
+  const rawLines = new Map<number, string>();
 
   for (let i = headerIdx + 1; i < lines.length; i++) {
     const line = lines[i];
     if (line.trim() === "") continue;
     const f = splitLine(line, delimiter);
     const lineNo = i + 1;
-    const ts = parseTimestamp(f[col.timestamp] ?? "");
+    const tsRaw = f[col.timestamp] ?? "";
+    const ts = parseTimestamp(tsRaw);
     const pv = parseNumber(f[col.pv_kw] ?? "");
     const load = parseNumber(f[col.load_kw] ?? "");
     const soc = parseNumber(f[col.battery_soc_pct] ?? "");
-    if (!ts || !Number.isFinite(pv) || !Number.isFinite(load) || !Number.isFinite(soc)) {
+    const invalidTimeStep = Boolean(ts) && ts!.ts.mm % 15 !== 0;
+    const invalidSeconds = Boolean(ts) && Number(tsRaw.match(/\d{1,2}:\d{2}:(\d{2})/)?.[1] ?? 0) !== 0;
+    // Doar erorile structurale sunt respinse din intervalele datate. Rămân vizibile în jurnalul datelor brute.
+    const rejectReason = !ts ? `dată nerecunoscută „${tsRaw.trim()}”`
+      : !Number.isFinite(pv) || !Number.isFinite(load) || !Number.isFinite(soc) ? "valoare numerică lipsă sau invalidă"
+      : invalidTimeStep || invalidSeconds ? "timestamp în afara grilei de 15 minute"
+      : null;
+    if (rejectReason) {
       skipped++;
-      if (badLines.length < 5) {
-        const why = !ts ? `dată nerecunoscută „${(f[col.timestamp] ?? "").trim()}”` : "valoare numerică lipsă sau invalidă";
-        badLines.push(`linia ${lineNo} (${why})`);
-      }
+      rejectedRows.push({ line: lineNo, rawLine: line, reason: rejectReason });
       continue;
     }
-    formats.set(ts.format, (formats.get(ts.format) ?? 0) + 1);
-    rows.push({ ts: ts.ts, key: ts.key, pv, load, soc, line: lineNo });
+    const qualityIssues: string[] = [];
+    if (pv < 0) qualityIssues.push(`PV negativ (${pv} kW)`);
+    if (load < 0) qualityIssues.push(`consum negativ (${load} kW)`);
+    if (soc < 0 || soc > 100) qualityIssues.push(`SOC în afara 0–100% (${soc}%)`);
+    if (qualityIssues.length) suspiciousRows++;
+    formats.set(ts!.format, (formats.get(ts!.format) ?? 0) + 1);
+    rows.push({ ts: ts!.ts, key: ts!.key, pv, load, soc, line: lineNo, qualityIssues });
+    rawLines.set(lineNo, line);
   }
 
   if (rows.length === 0) {
-    throw new CsvError(
-      "Niciun rând valid. Verifică formatul datei (ex. „01-06-26 5:15”, „01-06-2026 05:15” sau ISO „2026-06-01T05:15”) și valorile numerice.",
-    );
+    throw new CsvError("Nu există rânduri cu timestamp și numere interpretate. Verifică formatul fișierului.");
   }
 
-  if (skipped > 0) {
-    warnings.push(`${skipped} rânduri ignorate: ${badLines.join("; ")}${skipped > badLines.length ? " …" : ""}.`);
-  }
-
-  // Ordine cronologică; la marcaje de timp duplicate se păstrează primul rând.
-  rows.sort((a, b) => a.key - b.key || a.line - b.line);
+  // Fără a modifica datele brute, selectăm o singură înregistrare per timestamp pentru calcule.
+  // Preferăm o înregistrare fizic validă dacă există, altfel prima din fișier.
+  rows.sort((a, b) => a.key - b.key || a.qualityIssues.length - b.qualityIssues.length || a.line - b.line);
   const unique: RawRow[] = [];
   let duplicates = 0;
+  let excludedDuplicatesSuspicious = 0;
   for (const r of rows) {
     if (unique.length > 0 && unique[unique.length - 1].key === r.key) {
       duplicates++;
-      if (duplicates <= 3) {
-        warnings.push(`Marcaj de timp duplicat ${dayLabelOf(r.ts)} ${timeOf(r.ts)} (linia ${r.line}); s-a păstrat primul rând.`);
-      }
+      if (r.qualityIssues.length) excludedDuplicatesSuspicious++;
+      rejectedRows.push({ line: r.line, rawLine: rawLines.get(r.line) ?? "", reason: "timestamp duplicat; nu este inclus a doua oară în KPI" });
       continue;
     }
     unique.push(r);
   }
-  if (duplicates > 3) warnings.push(`În total ${duplicates} rânduri duplicate ignorate.`);
+  suspiciousRows -= excludedDuplicatesSuspicious;
+  rejectedRows.sort((a, b) => a.line - b.line);
+  if (suspiciousRows) warnings.push(`${suspiciousRows} rând(uri) cu valori suspecte sunt păstrate exact ca în CSV (vizibile în grafic și tabel), marcate ca anomalii și excluse din KPI.`);
+  if (skipped) warnings.push(`${skipped} rând(uri) neinterpretabile sau în afara grilei sunt păstrate în jurnalul CSV, dar nu pot fi reprezentate ca intervale valide.`);
+  if (duplicates) warnings.push(`${duplicates} timestamp-uri duplicate sunt păstrate în jurnalul CSV, dar folosite o singură dată în calcule.`);
 
   let timestampFormat = "";
   let best = -1;
@@ -187,6 +200,8 @@ export function parseCsv(text: string, fileName: string): ParseResult {
     delimiter: delimiter === "\t" ? "TAB" : delimiter,
     timestampFormat,
     skipped,
+    rejectedRows,
+    suspiciousRows,
     duplicates,
     warnings,
   };

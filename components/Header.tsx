@@ -15,18 +15,18 @@ export default function Header({ mode, onModeChange, fileName, onFile, loading }
   const inputRef = useRef<HTMLInputElement>(null);
 
   return (
-    <header className="sticky top-0 z-20 border-b border-slate-200 bg-white/95 backdrop-blur">
-      <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-3 px-3 py-3 sm:px-6">
-        <div className="flex items-center gap-3">
-          <SunIcon />
-          <div>
-            <h1 className="text-lg font-semibold leading-tight">Dashboard PV Solar</h1>
-            <p className="text-xs text-slate-500">Producție, consum și baterie la rezoluție de 15 minute</p>
+    <header className="relative z-20 border-b border-slate-200 bg-white/95 backdrop-blur lg:sticky lg:top-0">
+      <div className="mx-auto flex max-w-7xl flex-col gap-3 px-4 py-3 sm:px-6 lg:flex-row lg:items-center lg:justify-between">
+        <div className="flex min-w-0 items-center gap-3">
+          <div className="shrink-0"><SunIcon /></div>
+          <div className="min-w-0">
+            <h1 className="text-base font-semibold leading-tight sm:text-lg">Dashboard PV Solar</h1>
+            <p className="text-[11px] leading-snug text-slate-500 sm:text-xs">Producție, consum și baterie · intervale de 15 minute</p>
           </div>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2">
-          <div role="radiogroup" aria-label="Public țintă" className="flex rounded-lg border border-slate-300 bg-slate-100 p-0.5">
+        <div className="grid w-full min-w-0 grid-cols-1 gap-2 sm:flex sm:w-auto sm:flex-wrap sm:items-center">
+          <div role="radiogroup" aria-label="Public țintă" className="grid w-full grid-cols-2 rounded-lg border border-slate-300 bg-slate-100 p-0.5 sm:flex sm:w-auto">
             <ModeButton active={mode === "proprietar"} onClick={() => onModeChange("proprietar")}>
               Mod Proprietar
             </ModeButton>
@@ -37,7 +37,7 @@ export default function Header({ mode, onModeChange, fileName, onFile, loading }
 
           {fileName && (
             <>
-              <button type="button" className="btn-secondary" onClick={() => inputRef.current?.click()} disabled={loading}>
+              <button type="button" className="btn-secondary w-full sm:w-auto" onClick={() => inputRef.current?.click()} disabled={loading}>
                 <UploadIcon />
                 {loading ? "Se încarcă…" : "Încarcă alt CSV"}
               </button>
@@ -67,7 +67,7 @@ function ModeButton({ active, onClick, children }: { active: boolean; onClick: (
       role="radio"
       aria-checked={active}
       onClick={onClick}
-      className={`rounded-md px-3 py-1.5 text-sm font-medium transition ${
+      className={`min-h-11 rounded-md px-2 py-2 text-xs font-medium leading-tight transition sm:px-3 sm:text-sm ${
         active ? "bg-white text-slate-900 shadow-sm" : "text-slate-600 hover:text-slate-900"
       }`}
     >

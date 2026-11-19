@@ -30,8 +30,8 @@ export default function OwnerInsights({ items, days, period, day, settings, even
             Din rețea ați cumpărat <b>{fmt(t.eImport, 1)} kWh</b> și ați trimis în rețea <b>{fmt(t.eExport, 1)} kWh</b>.
           </li>
           <li>
-            {fmtPct(t.selfSufficiency, 0)} din consum a fost acoperit de panouri și baterie, o economie de aproximativ{" "}
-            <b>{fmt(t.savingsRon, 1)} lei</b>.
+            {fmtPct(t.selfSufficiency, 0)} din consum a fost acoperit de panouri și baterie.
+            {t.savingsRon !== null ? <> Economie estimată: <b>{fmt(t.savingsRon, 1)} lei</b>.</> : " Economia nu poate fi estimată fiabil."}
           </li>
           <li>
             Bateria a coborât până la {fmt(t.socMin, 0)}% și a urcat până la {fmt(t.socMax, 0)}%.

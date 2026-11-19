@@ -28,11 +28,14 @@ interface Point {
   pv: number;
   load: number;
   soc: number;
-  exportKw: number;
-  importKw: number;
-  curt: number;
+  exportKw: number | null;
+  importKw: number | null;
+  curt: number | null;
+  gridReliable: boolean;
+  qualityIssues: string[];
+  gridIssue: string | null;
   /** Zona tăiată: între plafon și puterea de export. */
-  curtRange: [number, number];
+  curtRange: [number, number] | null;
 }
 
 export default function DailyChart({ items, dayLabel, settings, mode }: Props) {
@@ -44,22 +47,26 @@ export default function DailyChart({ items, dayLabel, settings, mode }: Props) {
         pv: it.pv,
         load: it.load,
         soc: it.soc,
-        exportKw: it.pExport,
-        importKw: it.pImport,
-        curt: it.pCurt,
-        curtRange: [cap, cap + it.pCurt],
+        exportKw: it.gridReliable ? it.pExport : null,
+        importKw: it.gridReliable ? it.pImport : null,
+        curt: it.gridReliable ? it.pCurt : null,
+        gridReliable: it.gridReliable,
+        qualityIssues: it.qualityIssues,
+        gridIssue: it.gridIssue,
+        curtRange: it.gridReliable ? [cap, cap + it.pCurt] : null,
       })),
     [items, cap],
   );
   const ticks = useMemo(() => data.filter((d) => Number(d.time.slice(3)) === 0 && Number(d.time.slice(0, 2)) % 2 === 0).map((d) => d.time), [data]);
   const curtTotal = items.reduce((s, it) => s + it.eCurt, 0);
+  const socDomain: [number, number] = [Math.min(0, ...data.map((d) => d.soc)), Math.max(100, ...data.map((d) => d.soc))];
 
   return (
     <section className="card">
       <div className="mb-3 flex flex-wrap items-baseline justify-between gap-2">
         <h2 className="card-title">Curba zilei · {dayLabel}</h2>
         <p className="text-xs text-slate-500">
-          Rezoluție 15 minute · putere în kW pe axa stângă, SOC în % pe axa dreaptă
+          Rezoluție 15 minute · date brute nemodificate (inclusiv valori suspecte) · putere în kW pe axa stângă, SOC în % pe axa dreaptă
           {curtTotal > 0 ? ` · tăiat în această zi: ${fmt(curtTotal, 1)} kWh` : ""}
         </p>
       </div>
@@ -68,14 +75,16 @@ export default function DailyChart({ items, dayLabel, settings, mode }: Props) {
         items={[
           { label: "Producție PV (pv_kw)", color: COLORS.pv, kind: "line" },
           { label: "Consum (load_kw)", color: COLORS.load, kind: "line" },
-          { label: "Export în rețea", color: COLORS.export, kind: "dash" },
+          { label: "Export estimat fără plafon", color: COLORS.export, kind: "dash" },
           { label: "Putere tăiată (curtailed_kw)", color: COLORS.curt, kind: "hatch" },
           { label: `Plafon export ${fmt(cap, 1)} kW`, color: COLORS.cap, kind: "ref" },
           { label: "SOC baterie (%, axa dreaptă)", color: COLORS.soc, kind: "soc" },
         ]}
       />
 
-      <div className="h-[360px] w-full">
+      <p className="mb-1 text-[11px] text-slate-500 sm:hidden">Glisează graficul lateral pentru a vedea toate orele. Atinge curbele pentru valori.</p>
+      <div className="mobile-scroll -mx-1 overflow-x-auto pb-2 sm:mx-0 sm:overflow-visible" tabIndex={0} role="region" aria-label="Graficul zilnic, derulabil orizontal pe telefon">
+      <div className="h-[300px] min-w-[580px] sm:h-[360px] sm:min-w-0">
         <ResponsiveContainer width="100%" height="100%">
           <ComposedChart data={data} margin={{ top: 8, right: 4, bottom: 4, left: -8 }}>
             <defs>
@@ -92,14 +101,14 @@ export default function DailyChart({ items, dayLabel, settings, mode }: Props) {
               tickLine={false}
               axisLine={false}
               width={56}
+              domain={["auto", "auto"]}
               tickFormatter={(v: number) => fmt(v, 0)}
               label={{ value: "kW", angle: -90, position: "insideLeft", offset: 18, fontSize: 11, fill: "#64748b" }}
             />
             <YAxis
               yAxisId="soc"
               orientation="right"
-              domain={[0, 100]}
-              ticks={[0, 25, 50, 75, 100]}
+              domain={socDomain}
               tick={{ fontSize: 11, fill: "#64748b" }}
               tickLine={false}
               axisLine={false}
@@ -155,6 +164,7 @@ export default function DailyChart({ items, dayLabel, settings, mode }: Props) {
           </ComposedChart>
         </ResponsiveContainer>
       </div>
+      </div>
     </section>
   );
 }
@@ -167,11 +177,11 @@ function DailyTooltip({ active, payload, cap, mode }: { active?: boolean; payloa
     ["Consum", `${fmt(p.load, 2)} kW`, COLORS.load],
     ["SOC baterie", `${fmt(p.soc, 1)}%`, COLORS.soc],
   ];
-  if (p.exportKw > 0) rows.push(["Export", `${fmt(p.exportKw, 2)} kW`, COLORS.export]);
-  if (p.importKw > 0) rows.push(["Import", `${fmt(p.importKw, 2)} kW`, "#64748b"]);
-  rows.push(["Tăiat (curtailed)", `${fmt(p.curt, 2)} kW`, COLORS.curt]);
+  if (p.exportKw !== null && p.exportKw > 0) rows.push(["Export", `${fmt(p.exportKw, 2)} kW`, COLORS.export]);
+  if (p.importKw !== null && p.importKw > 0) rows.push(["Import", `${fmt(p.importKw, 2)} kW`, "#64748b"]);
+  if (p.curt !== null) rows.push(["Tăiat (curtailed)", `${fmt(p.curt, 2)} kW`, COLORS.curt]);
   return (
-    <div className="rounded-lg border border-slate-200 bg-white/95 px-3 py-2 text-xs shadow-lg">
+    <div className="max-w-[min(86vw,300px)] rounded-lg border border-slate-200 bg-white/95 px-3 py-2 text-xs shadow-lg">
       <p className="mb-1 font-semibold text-slate-900">Ora {p.time}</p>
       {rows.map(([k, v, c]) => (
         <div key={k} className="flex items-center justify-between gap-4">
@@ -182,6 +192,12 @@ function DailyTooltip({ active, payload, cap, mode }: { active?: boolean; payloa
           <span className="font-medium tabular-nums text-slate-900">{v}</span>
         </div>
       ))}
+      {p.qualityIssues.length > 0 && (
+        <p className="mt-2 text-[11px] font-semibold text-red-700">
+          Date brute suspecte: {p.qualityIssues.join("; ")}. Excluse din KPI-uri.
+        </p>
+      )}
+      {!p.gridReliable && <p className="mt-2 text-[11px] font-medium text-amber-700">{p.gridIssue}</p>}
       {mode === "operator" && <p className="mt-1 text-[11px] text-slate-500">P_curt = max(0, P_export − {fmt(cap, 1)} kW)</p>}
     </div>
   );

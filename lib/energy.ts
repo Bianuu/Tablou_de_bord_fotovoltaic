@@ -17,9 +17,9 @@ export const INTERVALS_PER_DAY = 96;
  *   P_curt(t)   = max(0, P_export(t) − P_plafon)                    [kW]
  *   E_curt(t)   = P_curt(t) · 0,25                                  [kWh]
  *
- * SOC(t−1) este rândul anterior din fișier, chiar dacă aparține zilei precedente. Pentru primul rând
- * nu există rând anterior, deci ΔE_bat = 0. Profilul bateriei rămâne exact cel din CSV: plafonul
- * nu modifică încărcarea bateriei (nu se resimulează nimic).
+ * Pentru primul rând ΔE_bat=0 (ipoteză explicită). Dacă lipsesc măsurători între două rânduri,
+ * NU atribuim saltul SOC intervalului următor: bilanțul de rețea și curtailment-ul sunt necunoscute
+ * pe acel rând și sunt excluse din KPI-urile aferente. Restul profilului SOC rămâne neschimbat.
  */
 export function computeIntervals(rows: RawRow[], settings: Settings): IntervalCalc[] {
   const cap = Math.max(0, settings.exportCapKw);
@@ -33,11 +33,24 @@ export function computeIntervals(rows: RawRow[], settings: Settings): IntervalCa
     const prev = i > 0 ? rows[i - 1] : null;
     const dayKey = dayKeyOf(r.ts);
 
-    const ePv = r.pv * DT_H;
-    const eLoad = r.load * DT_H;
-    const dSoc = prev ? r.soc - prev.soc : null;
+    const energyValid = r.qualityIssues.length === 0;
+    // Păstrăm valorile PV/consum/SOC brute în interval; doar contribuțiile la KPI sunt excluse.
+    const ePv = energyValid ? r.pv * DT_H : 0;
+    const eLoad = energyValid ? r.load * DT_H : 0;
+    const gapBeforeMin = prev ? Math.max(0, Math.round((r.key - prev.key) / 60000) - INTERVAL_MIN) : 0;
+    const gridIssue = !energyValid
+      ? `Valoare fizic suspectă: ${r.qualityIssues.join("; ")}. Rând exclus din toate KPI-urile.`
+      : prev && (prev.soc < 0 || prev.soc > 100)
+        ? "SOC anterior suspect; bilanțul acestui interval nu este calculabil. PV și consumul sunt incluse."
+        : prev && r.key - prev.key !== INTERVAL_MIN * 60_000
+          ? "Interval anterior lipsă; ΔSOC și bilanțul de rețea nu pot fi atribuite acestui interval."
+          : null;
+    const gridReliable = gridIssue === null;
+    const dSoc = prev && gridReliable ? r.soc - prev.soc : null;
     const dBat = dSoc === null ? 0 : (dSoc / 100) * capacity;
-    const eGrid = ePv - eLoad - dBat;
+    // Zero este un placeholder pentru seriile numerice; gridReliable=false semnalează
+    // explicit faptul că puterea/energia de rețea NU este 0 măsurat, ci necunoscut.
+    const eGrid = gridReliable ? ePv - eLoad - dBat : 0;
     const eExport = Math.max(0, eGrid);
     const eImport = Math.max(0, -eGrid);
     const pExport = eExport / DT_H;
@@ -60,8 +73,6 @@ export function computeIntervals(rows: RawRow[], settings: Settings): IntervalCa
       extraStored += eAbsorbed;
     }
 
-    const gapBeforeMin = prev ? Math.max(0, Math.round((r.key - prev.key) / 60000) - INTERVAL_MIN) : 0;
-
     out.push({
       idx: i,
       dayKey,
@@ -71,7 +82,12 @@ export function computeIntervals(rows: RawRow[], settings: Settings): IntervalCa
       pv: r.pv,
       load: r.load,
       soc: r.soc,
+      sourceLine: r.line,
+      qualityIssues: r.qualityIssues,
+      energyValid,
+      gridIssue,
       dSoc,
+      gridReliable,
       ePv,
       eLoad,
       dBat,
@@ -89,11 +105,18 @@ export function computeIntervals(rows: RawRow[], settings: Settings): IntervalCa
   return out;
 }
 
-const clampPct = (v: number | null) => (v === null ? null : Math.min(100, Math.max(0, v)));
+// Nu ascunde rezultatele imposibile prin limitare artificială la 0–100%.
+const validPct = (v: number | null) => v === null || !Number.isFinite(v) || v < -1e-7 || v > 100 + 1e-7
+  ? null : Math.min(100, Math.max(0, v));
 
 export function summarize(items: IntervalCalc[], settings: Settings): Totals {
   const t: Totals = {
     intervals: items.length,
+    gridIntervals: 0,
+    invalidIntervals: 0,
+    excludedGridIntervals: 0,
+    ePvGrid: 0,
+    eLoadGrid: 0,
     ePv: 0,
     eLoad: 0,
     eExport: 0,
@@ -125,8 +148,16 @@ export function summarize(items: IntervalCalc[], settings: Settings): Totals {
   };
 
   for (const it of items) {
+    if (!it.energyValid) t.invalidIntervals++;
     t.ePv += it.ePv;
     t.eLoad += it.eLoad;
+    if (it.gridReliable) {
+      t.gridIntervals++;
+      t.ePvGrid += it.ePv;
+      t.eLoadGrid += it.eLoad;
+    } else {
+      t.excludedGridIntervals++;
+    }
     t.eExport += it.eExport;
     t.eImport += it.eImport;
     t.eCurt += it.eCurt;
@@ -139,11 +170,11 @@ export function summarize(items: IntervalCalc[], settings: Settings): Totals {
       if (it.soc >= 99) t.eCurtBatteryFull += it.eCurt;
     }
     const at = `${it.dayLabel} ${it.time}`;
-    if (it.pv > t.peakPv) {
+    if (it.energyValid && it.pv > t.peakPv) {
       t.peakPv = it.pv;
       t.peakPvAt = at;
     }
-    if (it.load > t.peakLoad) {
+    if (it.energyValid && it.load > t.peakLoad) {
       t.peakLoad = it.load;
       t.peakLoadAt = at;
     }
@@ -155,20 +186,26 @@ export function summarize(items: IntervalCalc[], settings: Settings): Totals {
       t.peakImport = it.pImport;
       t.peakImportAt = at;
     }
-    t.socMin = Math.min(t.socMin, it.soc);
-    t.socMax = Math.max(t.socMax, it.soc);
+    if (it.energyValid) {
+      t.socMin = Math.min(t.socMin, it.soc);
+      t.socMax = Math.max(t.socMax, it.soc);
+    }
   }
 
+  if (!items.some((it) => it.energyValid)) {
+    t.socMin = NaN;
+    t.socMax = NaN;
+  }
   t.eExportEffective = t.eExport - t.eCurt;
   // Autoconsum (%) = (E_pv_total − E_export_total) / E_pv_total · 100
-  t.selfConsumptionRaw = t.ePv > 0 ? ((t.ePv - t.eExport) / t.ePv) * 100 : null;
+  t.selfConsumptionRaw = t.ePvGrid > 0 ? ((t.ePvGrid - t.eExport) / t.ePvGrid) * 100 : null;
   // Autosuficiență (%) = (E_load_total − E_import_total) / E_load_total · 100
-  t.selfSufficiencyRaw = t.eLoad > 0 ? ((t.eLoad - t.eImport) / t.eLoad) * 100 : null;
-  t.selfConsumption = clampPct(t.selfConsumptionRaw);
-  t.selfSufficiency = clampPct(t.selfSufficiencyRaw);
+  t.selfSufficiencyRaw = t.eLoadGrid > 0 ? ((t.eLoadGrid - t.eImport) / t.eLoadGrid) * 100 : null;
+  t.selfConsumption = validPct(t.selfConsumptionRaw);
+  t.selfSufficiency = validPct(t.selfSufficiencyRaw);
   t.curtPct = t.eExport > 0 ? (t.eCurt / t.eExport) * 100 : 0;
   // Economie estimată: energia consumată care NU a fost cumpărată din rețea, la tariful setat.
-  t.savingsRon = Math.max(0, t.eLoad - t.eImport) * Math.max(0, settings.tariffRon);
+  t.savingsRon = validPct(t.selfSufficiencyRaw) === null ? null : Math.max(0, t.eLoadGrid - t.eImport) * Math.max(0, settings.tariffRon);
   return t;
 }
 

@@ -118,7 +118,7 @@ export function ownerRecommendations(
 
 /** O frază despre independența energetică, pentru cardul principal din modul Proprietar. */
 export function independenceSentence(t: Totals): string {
-  if (t.selfSufficiency === null) return "Nu există consum în această perioadă.";
+  if (t.selfSufficiency === null) return "Autosuficiența nu se poate estima fiabil din datele și capacitatea bateriei selectate.";
   const pct = t.selfSufficiency;
   let verdict = "";
   if (pct >= 80) verdict = "Sunteți aproape independent de rețea.";

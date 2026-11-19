@@ -8,6 +8,21 @@
 
 body {
   @apply bg-slate-100 text-slate-900 antialiased;
+  min-width: 280px;
+  overflow-x: clip;
+}
+
+/* Children of a CSS grid/flex row may otherwise force the whole page wider than the phone. */
+main, section, .card { min-width: 0; }
+
+@media (max-width: 639px) {
+  input, select, textarea { font-size: 16px !important; } /* avoids iOS autofocus zoom */
+  .mobile-scroll { overscroll-behavior-inline: contain; -webkit-overflow-scrolling: touch; }
+  .mobile-scroll:focus-visible { outline: 2px solid #0284c7; outline-offset: 2px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { scroll-behavior: auto !important; transition-duration: 0.01ms !important; animation-duration: 0.01ms !important; }
 }
 
 @layer components {
@@ -21,10 +36,10 @@ body {
     @apply mb-1 block text-xs font-medium text-slate-600;
   }
   .input {
-    @apply w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm outline-none transition focus:border-sky-500 focus:ring-2 focus:ring-sky-200 disabled:bg-slate-100;
+    @apply min-h-11 w-full min-w-0 rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm outline-none transition focus:border-sky-500 focus:ring-2 focus:ring-sky-200 disabled:bg-slate-100;
   }
   .btn {
-    @apply inline-flex items-center justify-center gap-2 rounded-lg px-3.5 py-2 text-sm font-medium transition focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400 disabled:cursor-not-allowed disabled:opacity-50;
+    @apply inline-flex min-h-11 items-center justify-center gap-2 rounded-lg px-3.5 py-2 text-sm font-medium transition focus:outline-none focus-visible:ring-2 focus-visible:ring-sky-400 disabled:cursor-not-allowed disabled:opacity-50;
   }
   .btn-primary {
     @apply btn bg-slate-900 text-white hover:bg-slate-700;
